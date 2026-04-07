@@ -16,11 +16,11 @@
     "status": "completed"
   },
   {
-    "content": "Phase 2: All user stories covered in Development",
+    "content": "Phase 2: All user stories covered in Development and testing",
     "status": "completed"
   },
   {
     "content": "Phase 2: E2E testing using Testing Agent",
-    "status": "in_progress"
+    "status": "completed"
   }
 ]

@@ -1,189 +1,214 @@
-# plan.md
+# plan.md (Updated)
 
 ## Objectives
-- Prove the **core workflow** works reliably: **Skool/Pinterest URL → yt-dlp download → metadata → Dropbox upload → Content Library record**.
-- Deliver a V1 **Ultimate Deployment Dashboard** with tabs for Downloaders + Content Library, designed to scale into additional “side hustles” (modules).
-- Add higher-risk integrations (Instagram, trends, avatar video) only after the download/storage core is stable.
+- ✅ **Deliver a working V1 command center** (Ultimate Deployment Dashboard) with a scalable module/tab architecture.
+- ✅ Prove the **core workflow** is reliable end-to-end:
+  - **Skool classroom URL → scrape Loom links → yt-dlp download → metadata → Dropbox upload + shared link → Media Library record**.
+  - **Pinterest URL → yt-dlp download → metadata → Dropbox upload + shared link → Media Library record**.
+- ✅ Provide a **Content Library** that becomes your reusable asset bank (B‑roll + lessons).
+- Expand from “downloaders” into a **Learning + Repurposing OS**:
+  - Skool becomes **Skool Learning Intelligence** (download + transcript + structured insights + content plan).
+- Build toward automation loops:
+  - **Trend Finder → Pinterest auto-search + batch download** for B‑roll.
+- Add higher-risk integrations (Instagram automation, avatar video, storefront) after the core is stable.
 
 ---
 
-## Phase 1 — Core POC (Isolation): yt-dlp + Skool/Pinterest + Dropbox
+## Phase 1 — Core POC (Isolation): Skool (scrape Loom) + Pinterest + Dropbox ✅ COMPLETE
 
 ### User stories (POC)
-1. As a user, I can paste a **Skool video URL** and download the source file successfully.
-2. As a user, I can paste a **Pinterest URL** and download the video successfully.
-3. As a user, I can choose **Dropbox as the destination** and see the file appear in a folder.
-4. As a user, I can see **basic metadata** (title, source, duration if available) captured alongside the file.
-5. As a user, I can rerun a download and the system **deduplicates** (doesn’t re-upload identical content).
+1. ✅ As a user, I can paste a **Skool classroom lesson URL** and the system can extract video links.
+2. ✅ As a user, I can download Skool lesson videos (via **Loom URL extraction**) successfully.
+3. ✅ As a user, I can paste a **Pinterest URL** and download the video successfully.
+4. ✅ As a user, I can choose **Dropbox as destination** and see the file appear.
+5. ✅ As a user, I can capture **basic metadata** (title, source, duration, thumbnail if available).
 
-### Implementation steps
-- Web research / integration playbook
-  - Validate current best practices for: yt-dlp cookies-based auth, Pinterest support, Dropbox upload limits/chunked uploads.
-- POC script (single Python file)
-  - Inputs: `source_type (skool|pinterest)`, `url`, `output_dir`, `dropbox_target_path`.
-  - yt-dlp download using:
-    - Pinterest: direct URL support.
-    - Skool: attempt yt-dlp with **cookies.txt** / session cookies flow.
-  - Extract metadata via yt-dlp info-json.
-  - Upload to Dropbox via Dropbox SDK:
-    - Small files: simple upload.
-    - Large files: chunked upload.
-  - Persist a local JSON manifest for results + dedupe fingerprint (hash or yt-dlp id).
-- Fix-until-works loop
-  - Iterate on Skool auth approach (cookies export vs. credential-based) until repeatable.
-  - Confirm Pinterest variants (pin URL, board URL, video pin URL).
-
-### Next actions (POC)
-- Request/confirm from user (sensitive):
-  - Skool URL examples + preferred method: provide **cookies.txt** export (recommended) vs. login.
-  - Dropbox app token (scoped) + target folder structure.
-- Implement and run POC script against at least:
-  - 2 Skool video URLs
-  - 2 Pinterest URLs (different formats)
+### Implementation steps (completed)
+- ✅ Implemented cookie/auth approach for Skool page fetch.
+- ✅ Extracted Loom URLs from Skool `__NEXT_DATA__`.
+- ✅ Downloaded Loom + Pinterest videos using yt-dlp.
+- ✅ Uploaded to Dropbox (small + chunked support) and generated shared links.
 
 ### Success criteria (POC)
-- ≥90% success on test URLs with clean error messages for failures.
-- Dropbox uploads confirmed with returned shareable path/link.
-- Manifest shows correct metadata + dedupe behavior.
+- ✅ **All 9 POC tests passed** (Skool scrape, download, Dropbox upload/link; Pinterest info, download, Dropbox upload/link).
 
 ---
 
-## Phase 2 — V1 App Development (Dashboard + Downloaders + Library)
+## Phase 2 — V1 App Development (Dashboard + Downloaders + Library) ✅ COMPLETE
 
 ### User stories (V1)
-1. As a user, I can open the dashboard and use a **Skool Downloader tab** to submit URLs and see job progress.
-2. As a user, I can use a **Pinterest Downloader tab** the same way.
-3. As a user, I can view a **Content Library** of downloaded items with filters (source, date, tag).
-4. As a user, I can click an item to see **file details** and a **Dropbox link**.
-5. As a user, I can manage a **B-roll folder** concept (tag items as b-roll, add notes).
+1. ✅ Dashboard overview with KPIs + recent activity.
+2. ✅ Skool Downloader tab: scrape classroom → select video → queue download job.
+3. ✅ Pinterest Downloader tab: get info → queue download job.
+4. ✅ Content Library: grid/list view, filters, details, Dropbox links.
+5. ✅ B‑roll concept: tag items, notes, mark as B‑roll.
+6. ✅ Foundation tabs included (Instagram Manager stub/MVP, Trend Analyser, Prompt Creator, Kanban Planner, Module Builder, Settings/API Vault).
 
-### Implementation steps
-- Backend (FastAPI + MongoDB)
-  - Models: `DownloadJob`, `MediaItem`, `SourceAccount/Settings` (minimal), `Module` (stub for later).
-  - Endpoints:
-    - `POST /download/skool` and `POST /download/pinterest`
-    - `GET /jobs`, `GET /jobs/{id}`
-    - `GET /library`, `GET /library/{id}`, `PATCH /library/{id}` (tags/notes/broll)
-    - `POST /settings/dropbox/test` (validate token)
-  - Worker execution (MVP): background tasks / simple queue (single process) to run yt-dlp + Dropbox upload.
-  - Storage conventions in Dropbox: `/UltimateDashboard/{source}/{yyyy-mm}/{filename}`.
-- Frontend (React + shadcn/ui)
-  - Layout: sidebar tabs (Downloaders, Library, Settings).
-  - Downloader forms: URL input, optional destination subfolder, start button.
-  - Job UI: status (queued/downloading/uploading/done/failed) + logs.
-  - Library UI: table/grid, filters, detail drawer.
-- Incremental test
-  - Manual end-to-end: submit URL → observe job → confirm Dropbox link → item appears in Library.
-- Testing agent: 1 full E2E pass for V1.
-
-### Next actions (V1)
-- Build V1 using the proven POC code path (no re-implementation divergence).
-- Add robust error mapping (yt-dlp errors, auth errors, Dropbox errors) into user-friendly UI messages.
+### Implementation steps (completed)
+- ✅ Backend: FastAPI + MongoDB
+  - Download jobs, media library, prompts, kanban cards, API vault, Instagram accounts + DM rules, trend analyses, custom modules.
+  - Background job execution for yt-dlp downloads + Dropbox upload.
+- ✅ Frontend: React + shadcn/ui
+  - Dark premium UI, sidebar navigation, functional forms and tables.
+- ✅ Testing: full UI E2E pass completed with **100% success**.
 
 ### Success criteria (V1)
-- Users can complete the full loop for both sources without leaving the app.
-- Library is consistent with Dropbox uploads (no orphaned records).
-- Clear retries and failure states.
+- ✅ Users can complete Skool and Pinterest download flows entirely in the app.
+- ✅ Dropbox links appear and library stays consistent.
 
 ---
 
-## Phase 3 — “Side Hustles” Framework + Planner + Prompt Creator
+## Phase 3 — V1.1 Polish + “Learning Intelligence” + Better Jobs
 
 ### User stories (Phase 3)
-1. As a user, I can create a **new module/tab** by entering a name, description, and links.
-2. As a user, I can pin key resources (URLs, docs) inside a module.
-3. As a user, I can create and save **prompt templates** and reuse them quickly.
-4. As a user, I can manage work on a **Kanban board** (To do / Doing / Done).
-5. As a user, I can store integration keys in a **secure settings area** (MVP: env-backed + masked UI).
+1. As a user, I can see **live job progress** (downloading % / uploading % / ETA) without manual refresh.
+2. As a user, I can run **Skool Learning Intelligence**:
+   - Download → **Transcribe** → **Summarise** → **Extract key learnings** → **Generate repurposing plan**.
+3. As a user, I can open any Library item and see:
+   - transcript, key takeaways, suggested hooks, carousel outline, reel scripts.
+4. As a user, I can receive a **notification** when a job completes (in-app toast + optional email/webhook later).
+5. As a user, I can **dedupe** downloads by source URL/video id (avoid re-downloading and re-uploading duplicates).
 
 ### Implementation steps
-- Modules system (MVP)
-  - CRUD for `Module` and render as sidebar items.
-  - Each module has: notes, links, basic tasks.
-- Prompt Creator
-  - Prompt templates CRUD + tags + “copy to clipboard”.
-- Trello-style planner
-  - Kanban board CRUD + drag/drop.
-- Testing agent: E2E regression covering downloaders + new modules + prompts + kanban.
+- Jobs  Progress
+  - Add structured job logs in DB (steps + timestamps).
+  - Improve yt-dlp progress tracking:
+    - Option A: parse yt-dlp stdout progress lines and persist.
+    - Option B: move jobs to Celery/RQ later if needed.
+  - Add polling improvements or WebSocket/SSE endpoint for real-time job updates.
+- Skool Learning Intelligence
+  - Add transcription step (MVP options):
+    - Whisper via API (OpenAI) or local whisper if feasible.
+  - Store transcript + timestamps in MongoDB linked to `media_item_id`.
+  - Add AI analysis pipeline (Emergent LLM):
+    - key takeaways
+    - actionable steps
+    - hook ideas
+    - reel scripts (3 variations)
+    - carousel outline (slide-by-slide)
+    - CTA variants
+  - UI: add “Analyse” button per Library item + “Insights” panel.
+- Dedupe
+  - Use a fingerprint: `source + extractor_id` (preferred) or file hash.
+  - If duplicate found, reuse existing Dropbox link/path and mark job as complete.
 
 ### Success criteria (Phase 3)
-- New modules can be added without code changes.
-- Prompts and tasks persist reliably and are easy to navigate.
+- Skool videos can be processed into transcript + insights reliably.
+- Jobs feel responsive and trustworthy (clear status + progress + retry).
 
 ---
 
-## Phase 4 — Instagram Management (MVP Scheduling + DM Automation stub)
+## Phase 4 — Side Hustles Expansion + Planner + Prompt Workflows (Enhancement)
+
+> Note: Core Module Builder / Prompts / Kanban already exist. This phase upgrades them into an integrated workflow.
 
 ### User stories (Phase 4)
-1. As a user, I can connect 1 Instagram account and confirm the connection works.
-2. As a user, I can add additional accounts (up to 5–6) and switch between them.
-3. As a user, I can schedule a post from items in my Library.
-4. As a user, I can set simple DM keyword rules (trigger → response).
-5. As a user, I can see a log of automation actions and failures.
+1. As a user, I can attach a **trend analysis** or **Skool insight** to a Kanban task.
+2. As a user, I can convert any insight into:
+   - a Prompt template
+   - a Kanban card
+   - a checklist
+3. As a user, I can create a **PDF creator module** (lightweight) for lead magnets.
+4. As a user, I can create a new “side hustle module” and define:
+   - goals
+   - resources/links
+   - SOP steps
+   - prompts
 
 ### Implementation steps
-- Research Graph API vs Buffer/Later (choose lowest-friction MVP).
-- Implement connection + minimal scheduling flow.
-- DM automation: start as “rules + inbox logging” if API limits prevent full automation.
-- Testing agent: verify multi-account switching + scheduling flow.
+- Extend Module model:
+  - add `goals`, `sops`, `checklists`, `linked_items` (library/trends/prompts).
+- Add “Send to…” actions:
+  - Trend → Kanban
+  - Skool Insight → Prompt
+  - Library Item → Kanban
+- PDF Creator (MVP):
+  - Take a prompt + outline → render to styled PDF (e.g., reportlab/weasyprint) → upload to Dropbox → save in library.
 
 ### Success criteria (Phase 4)
-- At least one reliable posting/scheduling path works end-to-end.
+- Modules become a true operational hub: content + tasks + prompts + assets are linked.
 
 ---
 
-## Phase 5 — Trend Analyser (Competitors + Trending Audio)
+## Phase 5 — Trend Analyser V2 + Pinterest Auto-Search & Batch Downloader
 
 ### User stories (Phase 5)
-1. As a user, I can paste competitor URLs and get a summarized breakdown (hook, structure, CTA).
-2. As a user, I can detect and list **trending audio** references from provided URLs.
-3. As a user, I can receive **content ideas** tailored to my niche.
-4. As a user, I can save analyses to a module and turn them into tasks.
-5. As a user, I can export ideas as prompts for the Prompt Creator.
+1. As a user, I can analyse competitor URLs and get structured insights (hook, structure, CTA, style).
+2. As a user, the system suggests **trend keywords + B-roll keywords**.
+3. As a user, I can click “Find B-roll” and the Pinterest module:
+   - searches Pinterest for matching clips
+   - queues batch downloads
+   - saves them to Dropbox + Library with tags
+4. As a user, I can track which B-roll was downloaded for which trend/topic.
 
 ### Implementation steps
-- Start URL-based analysis (no scraping-heavy automation initially).
-- AI pipeline: summarize → extract patterns → suggest variants.
-- Store analyses and link to tasks.
-- Testing agent: validate outputs and persistence.
+- Trend pipeline improvements:
+  - store structured JSON consistently
+  - add “keyword extraction” and “B-roll search phrases” output
+- Pinterest auto-search (MVP options):
+  - Option A (lowest risk): open search URL + user pastes pin links (already supported).
+  - Option B (automation): scrape search results page, extract pin URLs, then queue N downloads.
+- Batch job orchestration:
+  - create a parent “batch job” record that spawns child download jobs.
 
 ### Success criteria (Phase 5)
-- Analyses are reproducible, saved, and actionable (tasks/prompts).
+- One-click workflow from trend → B-roll acquisition works reliably.
 
 ---
 
-## Phase 6 — Content/Avatar Creator (MVP)
+## Phase 6 — Instagram Management (Real Integration)
 
 ### User stories (Phase 6)
-1. As a user, I can upload a photo and generate an avatar video via a provider API.
-2. As a user, I can input a script and get a short reel-ready video.
-3. As a user, I can generate a carousel (images + captions) from a prompt.
-4. As a user, I can add text overlays and export.
-5. As a user, I can save outputs directly into the Library + Dropbox.
+1. As a user, I can verify Graph API connection and fetch basic page info.
+2. As a user, I can manage multiple accounts (up to 5–6).
+3. As a user, I can schedule posts using:
+   - Graph API (where allowed) or
+   - Buffer/Later as fallback.
+4. As a user, I can define DM keyword rules and see an automation log.
 
 ### Implementation steps
-- Choose provider (HeyGen/D-ID) via a small integration test.
-- Implement job-based generation (async) + storage back into Dropbox/Library.
-- Testing agent: run one generation end-to-end.
+- Confirm permissions + tokens for IG Graph API.
+- Decide scheduling path:
+  - Graph API where possible; else Buffer/Later integration.
+- Implement posting queue + status callbacks.
+- DM automation:
+  - if API limits prevent auto-replies, implement a “DM assistant inbox” workflow + logging.
 
 ### Success criteria (Phase 6)
-- One avatar video generation pipeline works reliably and lands in Library.
+- At least one reliable scheduling path works end-to-end for 1 account.
 
 ---
 
-## Phase 7 — Stan Store Style External Landing Page (Last)
+## Phase 7 — Content/Avatar Creator (MVP)
 
 ### User stories (Phase 7)
-1. As a user, I can create a simple landing page listing offers.
+1. As a user, I can upload a photo and generate an avatar video via provider API (HeyGen/D‑ID).
+2. As a user, I can input a script and generate reel-ready output.
+3. As a user, I can generate carousel assets (images + captions) from prompts.
+4. As a user, outputs are saved to Dropbox + Library.
+
+### Implementation steps
+- Choose provider via quick integration spike.
+- Add async generation jobs (similar to downloader jobs).
+- Save outputs back into Library with tags and templates.
+
+### Success criteria (Phase 7)
+- One avatar generation pipeline is stable and produces reusable content.
+
+---
+
+## Phase 8 — Stan Store Style External Landing Page (Last)
+
+### User stories (Phase 8)
+1. As a user, I can create a landing page listing offers.
 2. As a user, I can add digital products (PDFs/links) and update copy.
 3. As a user, I can generate shareable links for IG DMs.
-4. As a user, I can track clicks/conversions at a basic level.
+4. As a user, I can track basic clicks.
 5. As a user, I can initially link to Skool and later swap to products.
 
 ### Implementation steps
-- Build external landing page + product listings.
-- Hook into DM rules to share links.
-- Testing agent: verify link routing + page rendering.
+- Build external landing page + simple CMS.
+- Connect with DM rules (share links).
 
-### Success criteria (Phase 7)
-- Landing page is live, editable, and usable from IG DM links.
+### Success criteria (Phase 8)
+- Landing page is live, editable, and usable from Instagram DM links.
