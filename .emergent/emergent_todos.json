@@ -1,38 +1,26 @@
 [
   {
-    "content": "Phase 1 POC: Store credentials in .env",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 1 POC: Get integration playbooks (Dropbox + yt-dlp)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 1 POC: Write POC test script (Skool + Pinterest + Dropbox)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 1 POC: Run and fix POC until passing",
-    "status": "completed"
-  },
-  {
     "content": "Phase 2: Design guidelines",
-    "status": "in_progress"
+    "status": "completed"
   },
   {
     "content": "Phase 2: Install all dependencies",
-    "status": "pending"
+    "status": "completed"
   },
   {
     "content": "Phase 2: Build backend (FastAPI + MongoDB)",
-    "status": "pending"
+    "status": "completed"
   },
   {
     "content": "Phase 2: Build frontend (React dashboard)",
-    "status": "pending"
+    "status": "completed"
   },
   {
-    "content": "Phase 2: E2E testing",
-    "status": "pending"
+    "content": "Phase 2: All user stories covered in Development",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: E2E testing using Testing Agent",
+    "status": "in_progress"
   }
 ]
