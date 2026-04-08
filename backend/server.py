@@ -447,13 +447,8 @@ async def run_download_job(job_id: str, url: str, source: str, options: dict):
                 if match:
                     pct = float(match.group(1))
                     progress_val = int(5 + pct * 0.55)  # map 0-100% to 5-60%
-                    import asyncio as aio
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        asyncio.create_task(db.download_jobs.update_one(
-                            {"job_id": job_id},
-                            {"$set": {"progress": progress_val, "log": logs[-3:]}}
-                        ))
+                    # Skip live progress updates during download to avoid async issues
+                    # Final progress will be updated after download completes
                 if "[download]" in line or "[Merger]" in line or "Destination" in line:
                     logs.append(line[:100])
 
