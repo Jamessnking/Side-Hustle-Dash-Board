@@ -1,26 +1,18 @@
 [
   {
-    "content": "Phase 2: Design guidelines",
+    "content": "Phase 3: Install faster-whisper + check ffmpeg",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Install all dependencies",
-    "status": "completed"
+    "content": "Phase 3: Backend - live progress tracking + transcription + AI intelligence + dedup",
+    "status": "in_progress"
   },
   {
-    "content": "Phase 2: Build backend (FastAPI + MongoDB)",
-    "status": "completed"
+    "content": "Phase 3: Frontend - live progress + Insights panel + notifications",
+    "status": "pending"
   },
   {
-    "content": "Phase 2: Build frontend (React dashboard)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: All user stories covered in Development and testing",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: E2E testing using Testing Agent",
-    "status": "completed"
+    "content": "Phase 3: E2E testing",
+    "status": "pending"
   }
 ]

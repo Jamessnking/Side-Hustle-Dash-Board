@@ -1,13 +1,13 @@
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
-import os, json, re, hashlib, uuid, subprocess, tempfile, requests
+import os, json, re, hashlib, uuid, subprocess, tempfile, requests, asyncio, time
 from pathlib import Path
 from dotenv import load_dotenv
-import asyncio
 
 load_dotenv()
 
@@ -31,8 +31,21 @@ db = client[DB_NAME]
 DROPBOX_TOKEN = os.getenv("DROPBOX_ACCESS_TOKEN", "")
 SKOOL_COOKIES = os.getenv("SKOOL_COOKIES_PATH", "/app/backend/skool_cookies.txt")
 DROPBOX_FOLDER = os.getenv("DROPBOX_UPLOAD_FOLDER", "/UltimateDashboard")
+EMERGENT_LLM_KEY = os.getenv("EMERGENT_LLM_KEY", "")
 SKOOL_AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3OTU3MjMzMDgsImlhdCI6MTc2NDE4NzMwOCwidXNlcl9pZCI6IjVmMDYzNDJkZDlkOTQ1MzI5ZWY4ZDNmYTM5MDVmMDhhIn0.56Tn2FIJSMzNKH7CslUQ864ARd09SDvZxDyFVTzhoN0"
 SKOOL_CLIENT_ID = "616914c797264fc0bca8d98e5bf1d09f"
+
+# Whisper model cache (load once)
+_whisper_model = None
+
+def get_whisper_model():
+    global _whisper_model
+    if _whisper_model is None:
+        from faster_whisper import WhisperModel
+        print("Loading Whisper 'base' model...")
+        _whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+        print("Whisper model ready.")
+    return _whisper_model
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -57,23 +70,26 @@ def get_dropbox_client():
     import dropbox
     return dropbox.Dropbox(DROPBOX_TOKEN)
 
+def make_url_fingerprint(url: str) -> str:
+    """Create a consistent hash for deduplication"""
+    return hashlib.sha256(url.strip().lower().encode()).hexdigest()[:16]
+
 async def upload_to_dropbox_async(local_path: str, source_type: str, filename: str):
-    """Upload file to Dropbox and return shared link"""
     import dropbox as dbx_module
     try:
         dbx = get_dropbox_client()
         date_str = datetime.now().strftime("%Y-%m")
         clean_name = re.sub(r'[^\w\s.-]', '_', filename)
         dropbox_path = f"{DROPBOX_FOLDER}/{source_type}/{date_str}/{clean_name}"
-        
+
         try:
             dbx.files_create_folder_v2(f"{DROPBOX_FOLDER}/{source_type}/{date_str}")
         except:
             pass
-        
+
         file_size = os.path.getsize(local_path)
         CHUNK = 150 * 1024 * 1024
-        
+
         if file_size <= CHUNK:
             with open(local_path, "rb") as f:
                 dbx.files_upload(f.read(), dropbox_path, mode=dbx_module.files.WriteMode("overwrite"))
@@ -92,8 +108,7 @@ async def upload_to_dropbox_async(local_path: str, source_type: str, filename: s
                         break
                     dbx.files_upload_session_append_v2(chunk, cursor)
                     cursor = dbx_module.files.UploadSessionCursor(session_id=cursor.session_id, offset=cursor.offset + len(chunk))
-        
-        # Shared link
+
         try:
             settings = dbx_module.sharing.SharedLinkSettings(
                 requested_visibility=dbx_module.sharing.RequestedVisibility.public
@@ -112,28 +127,24 @@ async def upload_to_dropbox_async(local_path: str, source_type: str, filename: s
 
 
 def scrape_skool_videos(classroom_url: str):
-    """Scrape Loom video URLs from a Skool classroom page"""
     try:
         session = requests.Session()
         session.cookies.set('auth_token', SKOOL_AUTH_TOKEN, domain='.skool.com')
         session.cookies.set('client_id', SKOOL_CLIENT_ID, domain='.skool.com')
-        
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept': 'text/html,application/xhtml+xml',
         }
-        
         resp = session.get(classroom_url, headers=headers, timeout=30)
-        
         if resp.status_code != 200:
             return [], f"HTTP {resp.status_code}"
-        
+
         next_data_match = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', resp.text, re.DOTALL)
         if not next_data_match:
             return [], "No __NEXT_DATA__ found"
-        
+
         data = json.loads(next_data_match.group(1))
-        
+
         def find_videos(obj):
             found = []
             if isinstance(obj, dict):
@@ -149,7 +160,7 @@ def scrape_skool_videos(classroom_url: str):
                 for item in obj:
                     found.extend(find_videos(item))
             return found
-        
+
         videos = find_videos(data)
         seen_urls = set()
         unique_videos = []
@@ -157,58 +168,202 @@ def scrape_skool_videos(classroom_url: str):
             if v['url'] not in seen_urls:
                 seen_urls.add(v['url'])
                 unique_videos.append(v)
-        
         return unique_videos, None
     except Exception as e:
         return [], str(e)
 
 
-async def run_download_job(job_id: str, url: str, source: str, options: dict):
-    """Background task to download and process a video"""
+def transcribe_audio_file(audio_path: str) -> dict:
+    """Transcribe an audio file using faster-whisper"""
     try:
+        model = get_whisper_model()
+        segments, info = model.transcribe(audio_path, beam_size=5, language="en")
+        
+        full_text = ""
+        timestamped = []
+        for segment in segments:
+            full_text += segment.text + " "
+            timestamped.append({
+                "start": round(segment.start, 1),
+                "end": round(segment.end, 1),
+                "text": segment.text.strip()
+            })
+        
+        return {
+            "full_text": full_text.strip(),
+            "segments": timestamped,
+            "duration": info.duration,
+            "language": info.language
+        }
+    except Exception as e:
+        return {"error": str(e), "full_text": ""}
+
+
+async def generate_content_intelligence(transcript: str, title: str, source: str) -> dict:
+    """Generate structured content intelligence from a transcript using AI"""
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+        # Truncate very long transcripts to avoid token limits
+        truncated = transcript[:6000] if len(transcript) > 6000 else transcript
+
+        prompt = f"""You are an expert content strategist and social media coach.
+
+Analyse this content transcript and generate actionable intelligence:
+
+TITLE: {title}
+SOURCE: {source}
+TRANSCRIPT:
+{truncated}
+
+Return ONLY a JSON object with these exact fields:
+{{
+  "summary": "2-3 sentence summary of the core topic",
+  "key_learnings": ["learning 1", "learning 2", "learning 3", "learning 4", "learning 5"],
+  "hooks": [
+    {{"type": "question", "text": "hook text"}},
+    {{"type": "stat", "text": "hook text"}},
+    {{"type": "story", "text": "hook text"}}
+  ],
+  "reel_scripts": [
+    {{"title": "Reel 1 title", "hook": "opening line", "body": "main content", "cta": "call to action"}},
+    {{"title": "Reel 2 title", "hook": "opening line", "body": "main content", "cta": "call to action"}}
+  ],
+  "carousel_outline": {{
+    "title": "carousel title",
+    "slides": [
+      {{"slide": 1, "headline": "slide headline", "content": "slide content"}},
+      {{"slide": 2, "headline": "slide headline", "content": "slide content"}},
+      {{"slide": 3, "headline": "slide headline", "content": "slide content"}},
+      {{"slide": 4, "headline": "slide headline", "content": "slide content"}},
+      {{"slide": 5, "headline": "CTA slide", "content": "call to action"}}
+    ]
+  }},
+  "content_topics": ["topic 1", "topic 2", "topic 3"],
+  "target_audience": "who this content is for",
+  "repurposing_plan": ["idea 1", "idea 2", "idea 3"]
+}}"""
+
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=str(uuid.uuid4()),
+            system_message="You are an expert content strategist. Always respond with valid JSON only."
+        )
+        response = await chat.send_message(UserMessage(text=prompt))
+
+        try:
+            text = response.strip()
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0].strip()
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0].strip()
+            return json.loads(text)
+        except:
+            return {"raw_analysis": response, "summary": "Analysis complete - see raw output", "error": "JSON parse issue"}
+    except Exception as e:
+        return {"error": str(e), "summary": "AI analysis unavailable"}
+
+
+async def run_download_job(job_id: str, url: str, source: str, options: dict):
+    """Background task: download → upload to Dropbox → optionally transcribe → save to library"""
+    try:
+        # Dedup check
+        url_fp = make_url_fingerprint(url)
+        existing = await db.media_library.find_one({"url_fingerprint": url_fp})
+        if existing:
+            await db.download_jobs.update_one(
+                {"job_id": job_id},
+                {"$set": {
+                    "status": "complete",
+                    "progress": 100,
+                    "completed_at": datetime.utcnow(),
+                    "dropbox_link": existing.get("dropbox_link"),
+                    "media_item_id": existing.get("item_id"),
+                    "title": existing.get("title", ""),
+                    "note": "Duplicate: reused existing media item"
+                }}
+            )
+            return
+
         await db.download_jobs.update_one(
             {"job_id": job_id},
-            {"$set": {"status": "downloading", "started_at": datetime.utcnow(), "progress": 10}}
+            {"$set": {"status": "downloading", "started_at": datetime.utcnow(), "progress": 5,
+                       "log": ["Started download"]}}
         )
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             output_template = os.path.join(tmpdir, "%(title)s.%(ext)s")
-            
-            cmd = ["yt-dlp", "--output", output_template, "--no-warnings"]
-            
+
+            cmd = ["/root/.venv/bin/yt-dlp", "--output", output_template, "--no-warnings", "--progress"]
             if source == "skool":
-                # For Skool, the url is the Loom URL directly
                 cmd += ["--format", "bestvideo[height<=720][ext=mp4]+bestaudio/best[height<=720]/best"]
             elif source == "pinterest":
-                cmd += ["--format", "V_HLSV3_MOBILE-1431+V_HLSV3_MOBILE-audio1-1/V_HLSV3_MOBILE-783+V_HLSV3_MOBILE-audio1-1/bestvideo+bestaudio/best",
+                cmd += ["--format",
+                        "V_HLSV3_MOBILE-1431+V_HLSV3_MOBILE-audio1-1/V_HLSV3_MOBILE-783+V_HLSV3_MOBILE-audio1-1/bestvideo+bestaudio/best",
                         "--merge-output-format", "mp4"]
             else:
                 cmd += ["--format", "best[ext=mp4]/best"]
-            
             cmd.append(url)
-            
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-            
-            if proc.returncode != 0:
-                raise Exception(f"yt-dlp error: {proc.stderr[:300]}")
-            
+
+            # Run with real-time progress parsing
+            process = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, cwd=tmpdir
+            )
+
+            progress_val = 5
+            logs = ["Download started"]
+            for line in process.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                # Parse yt-dlp progress: "[download]  45.2% of   23.45MiB ..."
+                match = re.search(r'\[download\]\s+(\d+\.?\d*)%', line)
+                if match:
+                    pct = float(match.group(1))
+                    progress_val = int(5 + pct * 0.55)  # map 0-100% to 5-60%
+                    import asyncio as aio
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.create_task(db.download_jobs.update_one(
+                            {"job_id": job_id},
+                            {"$set": {"progress": progress_val, "log": logs[-3:]}}
+                        ))
+                if "[download]" in line or "[Merger]" in line or "Destination" in line:
+                    logs.append(line[:100])
+
+            process.wait()
+
+            if process.returncode != 0:
+                raise Exception(f"yt-dlp failed (code {process.returncode}): {' '.join(logs[-2:])}")
+
+            # Find downloaded file
             files = list(Path(tmpdir).glob("*"))
             if not files:
-                raise Exception("No output file found")
-            
+                raise Exception("No output file found after download")
+
             video_file = files[0]
             file_size = video_file.stat().st_size
-            
+
             await db.download_jobs.update_one(
                 {"job_id": job_id},
-                {"$set": {"status": "uploading", "progress": 70, "filename": video_file.name, "file_size": file_size}}
+                {"$set": {"status": "uploading", "progress": 65,
+                           "filename": video_file.name, "file_size": file_size,
+                           "log": ["Uploading to Dropbox..."]}}
             )
-            
+
             # Upload to Dropbox
-            dropbox_link, dropbox_path = await upload_to_dropbox_async(str(video_file), source, video_file.name)
-            
-            # Get video info
-            info_cmd = ["yt-dlp", "--dump-json", "--no-download", "--no-warnings", url]
+            dropbox_link, dropbox_path = await upload_to_dropbox_async(
+                str(video_file), source, video_file.name
+            )
+
+            await db.download_jobs.update_one(
+                {"job_id": job_id},
+                {"$set": {"progress": 75, "log": ["Dropbox upload complete. Extracting metadata..."]}}
+            )
+
+            # Get video metadata
+            info_cmd = ["/root/.venv/bin/yt-dlp", "--dump-json", "--no-download", "--no-warnings", url]
             info_proc = subprocess.run(info_cmd, capture_output=True, text=True, timeout=30)
             title = video_file.stem
             duration = 0
@@ -221,10 +376,11 @@ async def run_download_job(job_id: str, url: str, source: str, options: dict):
                     thumbnail = info.get('thumbnail', '')
                 except:
                     pass
-            
+
             # Create library item
             media_item = {
                 "item_id": str(uuid.uuid4()),
+                "url_fingerprint": url_fp,
                 "title": title,
                 "source": source,
                 "source_url": url,
@@ -235,13 +391,67 @@ async def run_download_job(job_id: str, url: str, source: str, options: dict):
                 "dropbox_link": dropbox_link,
                 "dropbox_path": dropbox_path,
                 "tags": [],
-                "is_broll": False,
+                "is_broll": source == "pinterest",
                 "notes": "",
+                "transcript": None,
+                "intelligence": None,
+                "transcription_status": "pending",
+                "intelligence_status": "pending",
                 "created_at": datetime.utcnow(),
                 "job_id": job_id
             }
             await db.media_library.insert_one(media_item)
-            
+
+            # Auto-transcribe if requested
+            transcribe = options.get("transcribe", False)
+            analyze = options.get("analyze", False)
+
+            if transcribe or analyze:
+                await db.download_jobs.update_one(
+                    {"job_id": job_id},
+                    {"$set": {"progress": 80, "log": ["Transcribing audio..."]}}
+                )
+                await db.media_library.update_one(
+                    {"item_id": media_item["item_id"]},
+                    {"$set": {"transcription_status": "running"}}
+                )
+
+                # Extract audio for transcription
+                audio_path = os.path.join(tmpdir, "audio.mp3")
+                ffmpeg_cmd = ["ffmpeg", "-i", str(video_file), "-vn", "-acodec", "mp3", "-ar", "16000", "-ac", "1", audio_path, "-y"]
+                audio_proc = subprocess.run(ffmpeg_cmd, capture_output=True, timeout=300)
+
+                transcript_result = {}
+                if audio_proc.returncode == 0 and os.path.exists(audio_path):
+                    transcript_result = transcribe_audio_file(audio_path)
+                    await db.media_library.update_one(
+                        {"item_id": media_item["item_id"]},
+                        {"$set": {
+                            "transcript": transcript_result,
+                            "transcription_status": "complete" if not transcript_result.get("error") else "failed"
+                        }}
+                    )
+
+                if analyze and transcript_result.get("full_text"):
+                    await db.download_jobs.update_one(
+                        {"job_id": job_id},
+                        {"$set": {"progress": 90, "log": ["Generating AI content intelligence..."]}}
+                    )
+                    await db.media_library.update_one(
+                        {"item_id": media_item["item_id"]},
+                        {"$set": {"intelligence_status": "running"}}
+                    )
+                    intelligence = await generate_content_intelligence(
+                        transcript_result["full_text"], title, source
+                    )
+                    await db.media_library.update_one(
+                        {"item_id": media_item["item_id"]},
+                        {"$set": {
+                            "intelligence": intelligence,
+                            "intelligence_status": "complete" if not intelligence.get("error") else "failed"
+                        }}
+                    )
+
             await db.download_jobs.update_one(
                 {"job_id": job_id},
                 {"$set": {
@@ -250,18 +460,20 @@ async def run_download_job(job_id: str, url: str, source: str, options: dict):
                     "completed_at": datetime.utcnow(),
                     "dropbox_link": dropbox_link,
                     "media_item_id": media_item["item_id"],
-                    "title": title
+                    "title": title,
+                    "log": ["Complete! Saved to Dropbox and library."]
                 }}
             )
-            
+
     except Exception as e:
         await db.download_jobs.update_one(
             {"job_id": job_id},
-            {"$set": {"status": "failed", "error": str(e), "progress": 0}}
+            {"$set": {"status": "failed", "error": str(e), "progress": 0,
+                       "log": [f"Error: {str(e)[:200]}"]}}
         )
 
 
-# ─── MODELS ───────────────────────────────────────────────────────────────────
+# ─── MODELS ────────────────────────────────────────────────────────────────────
 
 class SkoolDownloadRequest(BaseModel):
     loom_url: str
@@ -328,10 +540,26 @@ class ModuleCreate(BaseModel):
 
 class TrendAnalyseRequest(BaseModel):
     url: str
-    analysis_type: Optional[str] = "full"  # full, audio, hook, structure
+    analysis_type: Optional[str] = "full"
+
+class TranscribeRequest(BaseModel):
+    item_id: str
+
+class InstagramAccount(BaseModel):
+    username: str
+    account_type: str = "personal"
+    access_token: Optional[str] = ""
+    notes: Optional[str] = ""
+
+class DMRule(BaseModel):
+    account_id: str
+    trigger_keyword: str
+    response_message: str
+    send_link: Optional[str] = ""
+    is_active: bool = True
 
 
-# ─── ROOT ─────────────────────────────────────────────────────────────────────
+# ─── ROOT ──────────────────────────────────────────────────────────────────────
 
 @app.get("/api")
 async def root():
@@ -347,7 +575,7 @@ async def health():
     except:
         dropbox_ok = False
         dropbox_name = ""
-    
+
     return {
         "status": "ok",
         "dropbox": dropbox_ok,
@@ -356,20 +584,29 @@ async def health():
     }
 
 
-# ─── SKOOL ENDPOINTS ──────────────────────────────────────────────────────────
+# ─── SKOOL ─────────────────────────────────────────────────────────────────────
 
 @app.post("/api/skool/scrape")
 async def skool_scrape(req: SkoolScrapeRequest):
-    """Scrape all Loom videos from a Skool classroom URL"""
     videos, error = scrape_skool_videos(req.classroom_url)
     if error and not videos:
         raise HTTPException(status_code=400, detail=f"Failed to scrape: {error}")
     return {"videos": videos, "count": len(videos)}
 
-
 @app.post("/api/skool/download")
 async def skool_download(req: SkoolDownloadRequest, background_tasks: BackgroundTasks):
-    """Start a Skool/Loom video download job"""
+    # Dedup check
+    url_fp = make_url_fingerprint(req.loom_url)
+    existing = await db.media_library.find_one({"url_fingerprint": url_fp})
+    if existing:
+        return {
+            "job_id": None,
+            "status": "duplicate",
+            "message": "Already downloaded",
+            "media_item_id": existing["item_id"],
+            "dropbox_link": existing.get("dropbox_link")
+        }
+
     job_id = str(uuid.uuid4())
     job = {
         "job_id": job_id,
@@ -381,12 +618,13 @@ async def skool_download(req: SkoolDownloadRequest, background_tasks: Background
         "options": {"transcribe": req.transcribe, "analyze": req.analyze},
         "created_at": datetime.utcnow(),
         "error": None,
-        "dropbox_link": None
+        "dropbox_link": None,
+        "log": ["Queued"]
     }
     await db.download_jobs.insert_one(job)
-    background_tasks.add_task(run_download_job, job_id, req.loom_url, "skool", {})
+    background_tasks.add_task(run_download_job, job_id, req.loom_url, "skool",
+                               {"transcribe": req.transcribe, "analyze": req.analyze})
     return {"job_id": job_id, "status": "queued"}
-
 
 @app.get("/api/skool/jobs")
 async def get_skool_jobs():
@@ -394,13 +632,12 @@ async def get_skool_jobs():
     return [serialize_doc(j) for j in jobs]
 
 
-# ─── PINTEREST ENDPOINTS ──────────────────────────────────────────────────────
+# ─── PINTEREST ─────────────────────────────────────────────────────────────────
 
 @app.post("/api/pinterest/info")
 async def pinterest_info(url: str = Query(...)):
-    """Get video info from a Pinterest URL"""
     try:
-        cmd = ["yt-dlp", "--dump-json", "--no-download", "--no-warnings", url]
+        cmd = ["/root/.venv/bin/yt-dlp", "--dump-json", "--no-download", "--no-warnings", url]
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if proc.returncode == 0 and proc.stdout.strip():
             info = json.loads(proc.stdout.strip().split('\n')[0])
@@ -412,12 +649,22 @@ async def pinterest_info(url: str = Query(...)):
             }
         raise HTTPException(status_code=400, detail="Could not extract video info")
     except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=408, detail="Timeout extracting video info")
-
+        raise HTTPException(status_code=408, detail="Timeout")
 
 @app.post("/api/pinterest/download")
 async def pinterest_download(req: PinterestDownloadRequest, background_tasks: BackgroundTasks):
-    """Start a Pinterest video download job"""
+    # Dedup check
+    url_fp = make_url_fingerprint(req.url)
+    existing = await db.media_library.find_one({"url_fingerprint": url_fp})
+    if existing:
+        return {
+            "job_id": None,
+            "status": "duplicate",
+            "message": "Already downloaded",
+            "media_item_id": existing["item_id"],
+            "dropbox_link": existing.get("dropbox_link")
+        }
+
     job_id = str(uuid.uuid4())
     job = {
         "job_id": job_id,
@@ -429,37 +676,29 @@ async def pinterest_download(req: PinterestDownloadRequest, background_tasks: Ba
         "options": {},
         "created_at": datetime.utcnow(),
         "error": None,
-        "dropbox_link": None
+        "dropbox_link": None,
+        "log": ["Queued"]
     }
     await db.download_jobs.insert_one(job)
     background_tasks.add_task(run_download_job, job_id, req.url, "pinterest", {})
     return {"job_id": job_id, "status": "queued"}
-
 
 @app.get("/api/pinterest/jobs")
 async def get_pinterest_jobs():
     jobs = await db.download_jobs.find({"source": "pinterest"}).sort("created_at", -1).limit(50).to_list(50)
     return [serialize_doc(j) for j in jobs]
 
-
 @app.post("/api/pinterest/search-download")
 async def pinterest_search_download(req: PinterestSearchRequest, background_tasks: BackgroundTasks):
-    """Search Pinterest for videos by keyword and queue batch download"""
-    # Use yt-dlp with Pinterest search
-    try:
-        search_url = f"https://www.pinterest.com/search/pins/?q={req.keyword.replace(' ', '+')}&rs=typed"
-        # For now, return the search URL for user to browse
-        # In future: scrape search results and queue batch downloads
-        return {
-            "message": f"Search for '{req.keyword}' on Pinterest",
-            "search_url": search_url,
-            "tip": "Copy individual pin URLs and use the download form to batch download B-roll"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    search_url = f"https://www.pinterest.com/search/pins/?q={req.keyword.replace(' ', '+')}&rs=typed"
+    return {
+        "message": f"Search for '{req.keyword}' on Pinterest",
+        "search_url": search_url,
+        "tip": "Copy individual pin URLs and use the download form to batch download B-roll"
+    }
 
 
-# ─── JOBS (All) ───────────────────────────────────────────────────────────────
+# ─── JOBS ──────────────────────────────────────────────────────────────────────
 
 @app.get("/api/jobs")
 async def get_all_jobs(source: Optional[str] = None, status: Optional[str] = None, limit: int = 50):
@@ -471,7 +710,6 @@ async def get_all_jobs(source: Optional[str] = None, status: Optional[str] = Non
     jobs = await db.download_jobs.find(query).sort("created_at", -1).limit(limit).to_list(limit)
     return [serialize_doc(j) for j in jobs]
 
-
 @app.get("/api/jobs/{job_id}")
 async def get_job(job_id: str):
     job = await db.download_jobs.find_one({"job_id": job_id})
@@ -479,14 +717,40 @@ async def get_job(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
     return serialize_doc(job)
 
-
 @app.delete("/api/jobs/{job_id}")
 async def delete_job(job_id: str):
     await db.download_jobs.delete_one({"job_id": job_id})
     return {"success": True}
 
+@app.get("/api/jobs/{job_id}/stream")
+async def stream_job_progress(job_id: str):
+    """SSE endpoint for real-time job progress"""
+    async def event_generator():
+        last_status = None
+        timeout = 600  # 10 min max
+        start = time.time()
 
-# ─── CONTENT LIBRARY ─────────────────────────────────────────────────────────
+        while time.time() - start < timeout:
+            job = await db.download_jobs.find_one({"job_id": job_id})
+            if not job:
+                yield f"data: {json.dumps({'error': 'Job not found'})}\n\n"
+                break
+
+            job_data = serialize_doc(job)
+            status = job_data.get("status")
+
+            yield f"data: {json.dumps(job_data)}\n\n"
+
+            if status in ("complete", "failed"):
+                break
+
+            await asyncio.sleep(1.5)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream",
+                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# ─── CONTENT LIBRARY ───────────────────────────────────────────────────────────
 
 @app.get("/api/library")
 async def get_library(
@@ -509,14 +773,12 @@ async def get_library(
     items = await db.media_library.find(query).sort("created_at", -1).limit(limit).to_list(limit)
     return [serialize_doc(i) for i in items]
 
-
 @app.get("/api/library/{item_id}")
 async def get_library_item(item_id: str):
     item = await db.media_library.find_one({"item_id": item_id})
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     return serialize_doc(item)
-
 
 @app.patch("/api/library/{item_id}")
 async def update_library_item(item_id: str, update: MediaItemUpdate):
@@ -527,12 +789,10 @@ async def update_library_item(item_id: str, update: MediaItemUpdate):
     item = await db.media_library.find_one({"item_id": item_id})
     return serialize_doc(item)
 
-
 @app.delete("/api/library/{item_id}")
 async def delete_library_item(item_id: str):
     await db.media_library.delete_one({"item_id": item_id})
     return {"success": True}
-
 
 @app.get("/api/library/stats/overview")
 async def library_stats():
@@ -543,6 +803,8 @@ async def library_stats():
     jobs_total = await db.download_jobs.count_documents({})
     jobs_complete = await db.download_jobs.count_documents({"status": "complete"})
     jobs_active = await db.download_jobs.count_documents({"status": {"$in": ["queued", "downloading", "uploading"]}})
+    transcribed = await db.media_library.count_documents({"transcription_status": "complete"})
+    analysed = await db.media_library.count_documents({"intelligence_status": "complete"})
     return {
         "total_media": total,
         "skool_videos": skool_count,
@@ -550,11 +812,123 @@ async def library_stats():
         "broll_count": broll_count,
         "jobs_total": jobs_total,
         "jobs_complete": jobs_complete,
-        "jobs_active": jobs_active
+        "jobs_active": jobs_active,
+        "transcribed": transcribed,
+        "analysed": analysed
     }
 
 
-# ─── PROMPT CREATOR ───────────────────────────────────────────────────────────
+# ─── TRANSCRIBE & INTELLIGENCE ─────────────────────────────────────────────────
+
+@app.post("/api/library/{item_id}/transcribe")
+async def transcribe_item(item_id: str, background_tasks: BackgroundTasks):
+    """Transcribe audio from a media library item"""
+    item = await db.media_library.find_one({"item_id": item_id})
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    if item.get("transcription_status") == "running":
+        return {"message": "Transcription already in progress"}
+
+    await db.media_library.update_one(
+        {"item_id": item_id},
+        {"$set": {"transcription_status": "running"}}
+    )
+    background_tasks.add_task(run_transcription, item_id, item.get("source_url", ""))
+    return {"message": "Transcription started", "item_id": item_id}
+
+@app.post("/api/library/{item_id}/analyse")
+async def analyse_item(item_id: str, background_tasks: BackgroundTasks):
+    """Generate AI content intelligence for a library item"""
+    item = await db.media_library.find_one({"item_id": item_id})
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    if item.get("intelligence_status") == "running":
+        return {"message": "Analysis already in progress"}
+
+    # If no transcript yet, start transcription first then analyse
+    transcript_text = ""
+    if item.get("transcript") and item["transcript"].get("full_text"):
+        transcript_text = item["transcript"]["full_text"]
+
+    await db.media_library.update_one(
+        {"item_id": item_id},
+        {"$set": {"intelligence_status": "running"}}
+    )
+
+    if transcript_text:
+        background_tasks.add_task(run_intelligence, item_id, transcript_text, item.get("title", ""), item.get("source", ""))
+    else:
+        # Need to transcribe first
+        background_tasks.add_task(run_transcribe_then_analyse, item_id, item.get("source_url", ""), item.get("title", ""), item.get("source", ""))
+
+    return {"message": "Analysis started", "item_id": item_id}
+
+
+async def run_transcription(item_id: str, source_url: str):
+    """Background task: download audio and transcribe"""
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Download audio only
+            audio_out = os.path.join(tmpdir, "audio.%(ext)s")
+            cmd = ["/root/.venv/bin/yt-dlp", "--output", audio_out, "--format", "bestaudio",
+                   "--extract-audio", "--audio-format", "mp3", "--no-warnings", source_url]
+            proc = subprocess.run(cmd, capture_output=True, timeout=300)
+
+            audio_files = list(Path(tmpdir).glob("*.mp3"))
+            if not audio_files:
+                # Try different extension
+                audio_files = list(Path(tmpdir).glob("*.m4a")) + list(Path(tmpdir).glob("*.webm"))
+
+            if not audio_files:
+                raise Exception("Could not extract audio")
+
+            transcript_result = transcribe_audio_file(str(audio_files[0]))
+            await db.media_library.update_one(
+                {"item_id": item_id},
+                {"$set": {
+                    "transcript": transcript_result,
+                    "transcription_status": "complete" if not transcript_result.get("error") else "failed"
+                }}
+            )
+    except Exception as e:
+        await db.media_library.update_one(
+            {"item_id": item_id},
+            {"$set": {"transcription_status": "failed", "transcript": {"error": str(e)}}}
+        )
+
+async def run_intelligence(item_id: str, transcript_text: str, title: str, source: str):
+    """Background task: generate AI intelligence from transcript"""
+    try:
+        intelligence = await generate_content_intelligence(transcript_text, title, source)
+        await db.media_library.update_one(
+            {"item_id": item_id},
+            {"$set": {
+                "intelligence": intelligence,
+                "intelligence_status": "complete" if not intelligence.get("error") else "failed"
+            }}
+        )
+    except Exception as e:
+        await db.media_library.update_one(
+            {"item_id": item_id},
+            {"$set": {"intelligence_status": "failed", "intelligence": {"error": str(e)}}}
+        )
+
+async def run_transcribe_then_analyse(item_id: str, source_url: str, title: str, source: str):
+    """Transcribe then immediately analyse"""
+    await run_transcription(item_id, source_url)
+    item = await db.media_library.find_one({"item_id": item_id})
+    if item and item.get("transcript", {}).get("full_text"):
+        await run_intelligence(item_id, item["transcript"]["full_text"], title, source)
+    else:
+        await db.media_library.update_one(
+            {"item_id": item_id},
+            {"$set": {"intelligence_status": "failed", "intelligence": {"error": "No transcript available"}}}
+        )
+
+
+# ─── PROMPTS ───────────────────────────────────────────────────────────────────
 
 @app.post("/api/prompts")
 async def create_prompt(prompt: PromptCreate):
@@ -568,7 +942,6 @@ async def create_prompt(prompt: PromptCreate):
     await db.prompts.insert_one(doc)
     return serialize_doc(doc)
 
-
 @app.get("/api/prompts")
 async def get_prompts(category: Optional[str] = None, search: Optional[str] = None):
     query = {}
@@ -578,11 +951,9 @@ async def get_prompts(category: Optional[str] = None, search: Optional[str] = No
         query["$or"] = [
             {"title": {"$regex": search, "$options": "i"}},
             {"content": {"$regex": search, "$options": "i"}},
-            {"tags": {"$in": [search]}}
         ]
     prompts = await db.prompts.find(query).sort("created_at", -1).to_list(200)
     return [serialize_doc(p) for p in prompts]
-
 
 @app.get("/api/prompts/{prompt_id}")
 async def get_prompt(prompt_id: str):
@@ -591,21 +962,17 @@ async def get_prompt(prompt_id: str):
         raise HTTPException(status_code=404, detail="Prompt not found")
     return serialize_doc(p)
 
-
 @app.put("/api/prompts/{prompt_id}")
 async def update_prompt(prompt_id: str, update: PromptUpdate):
     update_data = {k: v for k, v in update.dict().items() if v is not None}
     update_data["updated_at"] = datetime.utcnow()
     await db.prompts.update_one({"prompt_id": prompt_id}, {"$set": update_data})
-    p = await db.prompts.find_one({"prompt_id": prompt_id})
-    return serialize_doc(p)
-
+    return serialize_doc(await db.prompts.find_one({"prompt_id": prompt_id}))
 
 @app.post("/api/prompts/{prompt_id}/use")
 async def increment_prompt_use(prompt_id: str):
     await db.prompts.update_one({"prompt_id": prompt_id}, {"$inc": {"use_count": 1}})
     return {"success": True}
-
 
 @app.delete("/api/prompts/{prompt_id}")
 async def delete_prompt(prompt_id: str):
@@ -613,7 +980,7 @@ async def delete_prompt(prompt_id: str):
     return {"success": True}
 
 
-# ─── KANBAN PLANNER ───────────────────────────────────────────────────────────
+# ─── KANBAN ────────────────────────────────────────────────────────────────────
 
 @app.post("/api/kanban/cards")
 async def create_kanban_card(card: KanbanCardCreate):
@@ -626,21 +993,17 @@ async def create_kanban_card(card: KanbanCardCreate):
     await db.kanban_cards.insert_one(doc)
     return serialize_doc(doc)
 
-
 @app.get("/api/kanban/cards")
 async def get_kanban_cards():
     cards = await db.kanban_cards.find({}).sort("created_at", 1).to_list(500)
     return [serialize_doc(c) for c in cards]
-
 
 @app.put("/api/kanban/cards/{card_id}")
 async def update_kanban_card(card_id: str, update: KanbanCardUpdate):
     update_data = {k: v for k, v in update.dict().items() if v is not None}
     update_data["updated_at"] = datetime.utcnow()
     await db.kanban_cards.update_one({"card_id": card_id}, {"$set": update_data})
-    card = await db.kanban_cards.find_one({"card_id": card_id})
-    return serialize_doc(card)
-
+    return serialize_doc(await db.kanban_cards.find_one({"card_id": card_id}))
 
 @app.delete("/api/kanban/cards/{card_id}")
 async def delete_kanban_card(card_id: str):
@@ -648,7 +1011,7 @@ async def delete_kanban_card(card_id: str):
     return {"success": True}
 
 
-# ─── API KEYS VAULT ───────────────────────────────────────────────────────────
+# ─── API VAULT ────────────────────────────────────────────────────────────────
 
 @app.post("/api/vault/keys")
 async def store_api_key(key_data: ApiKeyCreate):
@@ -661,12 +1024,10 @@ async def store_api_key(key_data: ApiKeyCreate):
         "created_at": datetime.utcnow()
     }
     await db.api_vault.insert_one(doc)
-    # Return with masked value
     result = serialize_doc(doc)
     result["key_masked"] = key_data.key_value[:8] + "..." + key_data.key_value[-4:] if len(key_data.key_value) > 12 else "****"
-    result["key_value"] = None  # Never return full key
+    result["key_value"] = None
     return result
-
 
 @app.get("/api/vault/keys")
 async def get_api_keys():
@@ -680,7 +1041,6 @@ async def get_api_keys():
         result.append(doc)
     return result
 
-
 @app.get("/api/vault/keys/{key_id}/reveal")
 async def reveal_api_key(key_id: str):
     key = await db.api_vault.find_one({"key_id": key_id})
@@ -688,14 +1048,13 @@ async def reveal_api_key(key_id: str):
         raise HTTPException(status_code=404, detail="Key not found")
     return {"key_value": key["key_value"]}
 
-
 @app.delete("/api/vault/keys/{key_id}")
 async def delete_api_key(key_id: str):
     await db.api_vault.delete_one({"key_id": key_id})
     return {"success": True}
 
 
-# ─── MODULES (Custom Side Hustles) ────────────────────────────────────────────
+# ─── MODULES ───────────────────────────────────────────────────────────────────
 
 @app.post("/api/modules")
 async def create_module(module: ModuleCreate):
@@ -709,21 +1068,17 @@ async def create_module(module: ModuleCreate):
     await db.custom_modules.insert_one(doc)
     return serialize_doc(doc)
 
-
 @app.get("/api/modules")
 async def get_modules():
     modules = await db.custom_modules.find({}).sort("created_at", 1).to_list(100)
     return [serialize_doc(m) for m in modules]
-
 
 @app.put("/api/modules/{module_id}")
 async def update_module(module_id: str, module: ModuleCreate):
     update_data = module.dict()
     update_data["updated_at"] = datetime.utcnow()
     await db.custom_modules.update_one({"module_id": module_id}, {"$set": update_data})
-    m = await db.custom_modules.find_one({"module_id": module_id})
-    return serialize_doc(m)
-
+    return serialize_doc(await db.custom_modules.find_one({"module_id": module_id}))
 
 @app.delete("/api/modules/{module_id}")
 async def delete_module(module_id: str):
@@ -735,22 +1090,17 @@ async def delete_module(module_id: str):
 
 @app.post("/api/trends/analyse")
 async def analyse_trend(req: TrendAnalyseRequest):
-    """AI-powered trend analysis of a URL (Instagram/TikTok post or video)"""
     try:
-        # Extract video info
-        cmd = ["yt-dlp", "--dump-json", "--no-download", "--no-warnings", req.url]
+        cmd = ["/root/.venv/bin/yt-dlp", "--dump-json", "--no-download", "--no-warnings", req.url]
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        
         video_info = {}
         if proc.returncode == 0 and proc.stdout.strip():
             try:
                 video_info = json.loads(proc.stdout.strip().split('\n')[0])
             except:
                 pass
-        
-        # Generate AI analysis using Emergent LLM
+
         analysis = await generate_trend_analysis(req.url, video_info, req.analysis_type)
-        
         doc = {
             "analysis_id": str(uuid.uuid4()),
             "url": req.url,
@@ -766,24 +1116,18 @@ async def analyse_trend(req: TrendAnalyseRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/trends")
 async def get_trends():
     trends = await db.trend_analyses.find({}).sort("created_at", -1).limit(50).to_list(50)
     return [serialize_doc(t) for t in trends]
 
-
 async def generate_trend_analysis(url: str, video_info: dict, analysis_type: str) -> dict:
-    """Generate AI analysis of a video/post"""
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
-        
-        llm_key = os.getenv("EMERGENT_LLM_KEY", "")
-        
         title = video_info.get('title', 'Unknown video')
         duration = video_info.get('duration', 0)
         description = video_info.get('description', '')[:500]
-        
+
         prompt = f"""Analyse this content creator video for business intelligence:
 
 URL: {url}
@@ -802,17 +1146,14 @@ Provide a JSON analysis with these fields:
 8. replication_strategy: How could you replicate this for your brand?
 
 Return ONLY valid JSON."""
-        
+
         chat = LlmChat(
-            api_key=llm_key,
+            api_key=EMERGENT_LLM_KEY,
             session_id=str(uuid.uuid4()),
-            system_message="You are an expert social media content strategist and trend analyser. Always respond with valid JSON."
+            system_message="You are an expert social media content strategist. Always respond with valid JSON."
         )
-        
         response = await chat.send_message(UserMessage(text=prompt))
-        
         try:
-            # Extract JSON from response
             text = response.strip()
             if "```json" in text:
                 text = text.split("```json")[1].split("```")[0].strip()
@@ -820,25 +1161,12 @@ Return ONLY valid JSON."""
                 text = text.split("```")[1].split("```")[0].strip()
             return json.loads(text)
         except:
-            return {"raw_analysis": response, "error": "Could not parse structured response"}
+            return {"raw_analysis": response}
     except Exception as e:
-        return {"error": str(e), "url": url, "basic_info": {"title": video_info.get('title', ''), "duration": video_info.get('duration', 0)}}
+        return {"error": str(e)}
 
 
-# ─── INSTAGRAM MANAGEMENT (Stub - ready for API integration) ──────────────────
-
-class InstagramAccount(BaseModel):
-    username: str
-    account_type: str = "personal"  # personal, business, creator
-    access_token: Optional[str] = ""
-    notes: Optional[str] = ""
-
-class DMRule(BaseModel):
-    account_id: str
-    trigger_keyword: str
-    response_message: str
-    send_link: Optional[str] = ""
-    is_active: bool = True
+# ─── INSTAGRAM ─────────────────────────────────────────────────────────────────
 
 @app.post("/api/instagram/accounts")
 async def add_instagram_account(account: InstagramAccount):
