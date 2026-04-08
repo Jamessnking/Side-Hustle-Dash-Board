@@ -575,13 +575,36 @@ export default function ContentLibrary() {
         {selectedItem && (
           <div className="rounded-xl border border-border/70 bg-card p-5">
             <div className="flex items-start justify-between mb-4">
-              <div>
+              <div className="flex-1">
                 <h2 className="text-sm font-semibold text-foreground">{selectedItem.title}</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {selectedItem.source} · {formatDuration(selectedItem.duration)} · {formatSize(selectedItem.file_size)}
                 </p>
+                
+                {/* Lesson Description */}
+                {selectedItem.description && (
+                  <div className="mt-3 p-2.5 rounded-lg bg-surface-2 border border-border/50">
+                    <p className="text-xs text-muted-foreground leading-relaxed">{selectedItem.description}</p>
+                  </div>
+                )}
+                
+                {/* Resource Links */}
+                {selectedItem.resource_links && selectedItem.resource_links.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-xs font-semibold text-foreground mb-1">📎 Resources:</p>
+                    <div className="space-y-1">
+                      {selectedItem.resource_links.map((link, i) => (
+                        <a key={i} href={link} target="_blank" rel="noreferrer"
+                          className="flex items-center gap-1.5 text-xs text-primary hover:underline">
+                          <ExternalLink className="w-3 h-3 shrink-0" />
+                          <span className="truncate">{link.includes('instagram') ? '📸 Instagram' : link.replace(/^https?:\/\//, '')}</span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-              <button onClick={() => setSelectedItem(null)} className="text-muted-foreground hover:text-foreground">
+              <button onClick={() => setSelectedItem(null)} className="text-muted-foreground hover:text-foreground ml-2">
                 <X className="w-4 h-4" />
               </button>
             </div>

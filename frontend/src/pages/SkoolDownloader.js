@@ -28,6 +28,7 @@ export default function SkoolDownloader() {
   const [videos, setVideos] = useState([]);
   const [selectedLoomUrl, setSelectedLoomUrl] = useState('');
   const [selectedTitle, setSelectedTitle] = useState('');
+  const [selectedVideo, setSelectedVideo] = useState(null);
   const [transcribe, setTranscribe] = useState(false);
   const [analyze, setAnalyze] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -94,18 +95,29 @@ export default function SkoolDownloader() {
   const handleSelectVideo = (video) => {
     setSelectedLoomUrl(video.url);
     setSelectedTitle(video.title);
+    // Store full video object for metadata
+    setSelectedVideo(video);
   };
 
   const handleDownload = async () => {
     if (!selectedLoomUrl) { toast.error('Select or paste a video URL'); return; }
     setDownloading(true);
     try {
-      const res = await axios.post(`${BACKEND_URL}/api/skool/download`, {
+      const payload = {
         loom_url: selectedLoomUrl,
         lesson_title: selectedTitle,
         transcribe,
         analyze
-      });
+      };
+      
+      // Add metadata if available from scraping
+      if (selectedVideo) {
+        payload.description = selectedVideo.description || "";
+        payload.resource_links = selectedVideo.resource_links || [];
+        payload.metadata = selectedVideo.metadata || {};
+      }
+      
+      const res = await axios.post(`${BACKEND_URL}/api/skool/download`, payload);
       if (res.data.status === 'duplicate') {
         toast.info('Already downloaded! Available in Content Library.');
       } else {
@@ -128,7 +140,10 @@ export default function SkoolDownloader() {
           loom_url: v.url,
           lesson_title: v.title,
           transcribe,
-          analyze
+          analyze,
+          description: v.description || "",
+          resource_links: v.resource_links || [],
+          metadata: v.metadata || {}
         });
         queued++;
       } catch {}

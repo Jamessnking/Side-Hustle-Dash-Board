@@ -127,6 +127,13 @@ async def upload_to_dropbox_async(local_path: str, source_type: str, filename: s
 
 
 def scrape_skool_videos(classroom_url: str):
+    """
+    Enhanced Skool scraper that captures:
+    - Video URLs and titles
+    - Lesson descriptions
+    - Resource links (Instagram examples, tools, etc.)
+    - Any additional context from the lesson page
+    """
     try:
         session = requests.Session()
         session.cookies.set('auth_token', SKOOL_AUTH_TOKEN, domain='.skool.com')
@@ -145,7 +152,60 @@ def scrape_skool_videos(classroom_url: str):
 
         data = json.loads(next_data_match.group(1))
 
-        def find_videos(obj):
+        def extract_text_content(obj):
+            """Recursively extract text content from nested content objects"""
+            if isinstance(obj, str):
+                return obj
+            elif isinstance(obj, dict):
+                if 'content' in obj:
+                    content = obj['content']
+                    if isinstance(content, str):
+                        return content
+                    elif isinstance(content, list):
+                        return ' '.join(extract_text_content(item) for item in content)
+                    elif isinstance(content, dict):
+                        return extract_text_content(content)
+                # Also check for 'text' field
+                if 'text' in obj:
+                    return str(obj['text'])
+                # Recursively search all values
+                texts = []
+                for v in obj.values():
+                    result = extract_text_content(v)
+                    if result:
+                        texts.append(result)
+                return ' '.join(texts) if texts else ''
+            elif isinstance(obj, list):
+                return ' '.join(extract_text_content(item) for item in obj)
+            return ''
+
+        def extract_links(obj, found_links=None):
+            """Extract all URLs from the data structure"""
+            if found_links is None:
+                found_links = []
+            
+            if isinstance(obj, str):
+                # Look for URLs in strings
+                url_pattern = r'https?://[^\s<>"{}|\\^\[\]`]+'
+                urls = re.findall(url_pattern, obj)
+                found_links.extend(urls)
+            elif isinstance(obj, dict):
+                # Check for 'href' or 'url' keys
+                if 'href' in obj and isinstance(obj['href'], str):
+                    found_links.append(obj['href'])
+                if 'url' in obj and isinstance(obj['url'], str) and obj['url'].startswith('http'):
+                    found_links.append(obj['url'])
+                # Recursively search all values
+                for v in obj.values():
+                    extract_links(v, found_links)
+            elif isinstance(obj, list):
+                for item in obj:
+                    extract_links(item, found_links)
+            
+            return found_links
+
+        def find_videos(obj, parent_obj=None):
+            """Find videos and their associated metadata (description, links)"""
             found = []
             if isinstance(obj, dict):
                 vid = obj.get('videoLink', '')
@@ -153,12 +213,37 @@ def scrape_skool_videos(classroom_url: str):
                     title = obj.get('title', 'Untitled')
                     if isinstance(title, dict):
                         title = title.get('content', 'Untitled')
-                    found.append({'title': str(title), 'url': vid, 'thumbnail': obj.get('videoThumbnail', '')})
+                    
+                    # Extract description/body content
+                    description = ''
+                    body = obj.get('body') or obj.get('description') or obj.get('content')
+                    if body:
+                        description = extract_text_content(body)
+                    
+                    # Extract links from the lesson
+                    lesson_links = extract_links(obj)
+                    # Filter out the video link itself and duplicates
+                    resource_links = [link for link in set(lesson_links) if link != vid and 'skool.com' not in link]
+                    
+                    video_data = {
+                        'title': str(title),
+                        'url': vid,
+                        'thumbnail': obj.get('videoThumbnail', ''),
+                        'description': description.strip() if description else '',
+                        'resource_links': resource_links,
+                        'has_instagram_examples': any('instagram.com' in link for link in resource_links),
+                        'metadata': {
+                            'lesson_id': obj.get('id', ''),
+                            'created_at': obj.get('createdAt', ''),
+                        }
+                    }
+                    found.append(video_data)
+                
                 for v in obj.values():
-                    found.extend(find_videos(v))
+                    found.extend(find_videos(v, obj))
             elif isinstance(obj, list):
                 for item in obj:
-                    found.extend(find_videos(item))
+                    found.extend(find_videos(item, obj))
             return found
 
         videos = find_videos(data)
@@ -168,8 +253,21 @@ def scrape_skool_videos(classroom_url: str):
             if v['url'] not in seen_urls:
                 seen_urls.add(v['url'])
                 unique_videos.append(v)
+        
+        # Log what we found for debugging
+        print(f"✅ Scraped {len(unique_videos)} videos from Skool classroom")
+        for v in unique_videos:
+            print(f"  - {v['title']}")
+            if v.get('description'):
+                print(f"    Description: {v['description'][:100]}...")
+            if v.get('resource_links'):
+                print(f"    Links found: {len(v['resource_links'])}")
+                for link in v['resource_links'][:3]:  # Show first 3
+                    print(f"      → {link}")
+        
         return unique_videos, None
     except Exception as e:
+        print(f"❌ Scraper error: {str(e)}")
         return [], str(e)
 
 
@@ -199,35 +297,61 @@ def transcribe_audio_file(audio_path: str) -> dict:
         return {"error": str(e), "full_text": ""}
 
 
-async def generate_content_intelligence(transcript: str, title: str, source: str) -> dict:
-    """Generate structured content intelligence from a transcript using AI"""
+async def generate_content_intelligence(transcript: str, title: str, source: str, description: str = "", resource_links: list = None) -> dict:
+    """
+    Generate structured content intelligence from a transcript using AI
+    Now includes lesson description and resource links for richer context
+    """
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
 
         # Truncate very long transcripts to avoid token limits
         truncated = transcript[:6000] if len(transcript) > 6000 else transcript
+        
+        # Build context string
+        context_parts = [f"TITLE: {title}", f"SOURCE: {source}"]
+        
+        if description:
+            context_parts.append(f"\nLESSON DESCRIPTION:\n{description[:500]}")
+        
+        if resource_links:
+            instagram_links = [link for link in resource_links if 'instagram.com' in link]
+            other_links = [link for link in resource_links if 'instagram.com' not in link]
+            
+            if instagram_links:
+                context_parts.append(f"\nINSTAGRAM EXAMPLES REFERENCED:\n" + "\n".join(f"  - {link}" for link in instagram_links[:5]))
+            if other_links:
+                context_parts.append(f"\nADDITIONAL RESOURCES:\n" + "\n".join(f"  - {link}" for link in other_links[:5]))
+
+        context = "\n".join(context_parts)
 
         prompt = f"""You are an expert content strategist and social media coach.
 
-Analyse this content transcript and generate actionable intelligence:
+Analyse this educational content and generate actionable intelligence:
 
-TITLE: {title}
-SOURCE: {source}
-TRANSCRIPT:
+{context}
+
+VIDEO TRANSCRIPT:
 {truncated}
+
+Generate strategic content based on BOTH the transcript AND the lesson context (description & examples).
+
+If Instagram profiles or posts are referenced, note that these are INSTRUCTOR-PROVIDED EXAMPLES of good content. 
+Use them to inform your hook/script recommendations.
 
 Return ONLY a JSON object with these exact fields:
 {{
-  "summary": "2-3 sentence summary of the core topic",
+  "summary": "2-3 sentence summary of the core topic and key takeaway",
   "key_learnings": ["learning 1", "learning 2", "learning 3", "learning 4", "learning 5"],
   "hooks": [
     {{"type": "question", "text": "hook text"}},
-    {{"type": "stat", "text": "hook text"}},
-    {{"type": "story", "text": "hook text"}}
+    {{"type": "curiosity", "text": "hook text"}},
+    {{"type": "bold", "text": "hook text"}}
   ],
   "reel_scripts": [
-    {{"title": "Reel 1 title", "hook": "opening line", "body": "main content", "cta": "call to action"}},
-    {{"title": "Reel 2 title", "hook": "opening line", "body": "main content", "cta": "call to action"}}
+    {{"title": "Reel 1 title", "hook": "opening line", "body": "main content (2-3 sentences)", "cta": "call to action"}},
+    {{"title": "Reel 2 title", "hook": "opening line", "body": "main content", "cta": "call to action"}},
+    {{"title": "Reel 3 title", "hook": "opening line", "body": "main content", "cta": "call to action"}}
   ],
   "carousel_outline": {{
     "title": "carousel title",
@@ -241,7 +365,8 @@ Return ONLY a JSON object with these exact fields:
   }},
   "content_topics": ["topic 1", "topic 2", "topic 3"],
   "target_audience": "who this content is for",
-  "repurposing_plan": ["idea 1", "idea 2", "idea 3"]
+  "repurposing_plan": ["idea 1", "idea 2", "idea 3"],
+  "instagram_insights": "If Instagram examples were provided, note key patterns or strategies observed"
 }}"""
 
         chat = LlmChat(
@@ -393,6 +518,11 @@ async def run_download_job(job_id: str, url: str, source: str, options: dict):
                 "tags": [],
                 "is_broll": source == "pinterest",
                 "notes": "",
+                # NEW: Store lesson context
+                "description": options.get("description", ""),
+                "resource_links": options.get("resource_links", []),
+                "lesson_metadata": options.get("metadata", {}),
+                # AI fields
                 "transcript": None,
                 "intelligence": None,
                 "transcription_status": "pending",
@@ -480,6 +610,9 @@ class SkoolDownloadRequest(BaseModel):
     lesson_title: Optional[str] = ""
     transcribe: bool = False
     analyze: bool = False
+    description: Optional[str] = ""
+    resource_links: Optional[List[str]] = []
+    metadata: Optional[dict] = {}
 
 class SkoolScrapeRequest(BaseModel):
     classroom_url: str
@@ -615,15 +748,32 @@ async def skool_download(req: SkoolDownloadRequest, background_tasks: Background
         "title": req.lesson_title or "Skool Lesson",
         "status": "queued",
         "progress": 0,
-        "options": {"transcribe": req.transcribe, "analyze": req.analyze},
+        "options": {
+            "transcribe": req.transcribe,
+            "analyze": req.analyze,
+            "description": req.description,
+            "resource_links": req.resource_links or [],
+            "metadata": req.metadata or {}
+        },
         "created_at": datetime.utcnow(),
         "error": None,
         "dropbox_link": None,
         "log": ["Queued"]
     }
     await db.download_jobs.insert_one(job)
-    background_tasks.add_task(run_download_job, job_id, req.loom_url, "skool",
-                               {"transcribe": req.transcribe, "analyze": req.analyze})
+    background_tasks.add_task(
+        run_download_job,
+        job_id,
+        req.loom_url,
+        "skool",
+        {
+            "transcribe": req.transcribe,
+            "analyze": req.analyze,
+            "description": req.description,
+            "resource_links": req.resource_links or [],
+            "metadata": req.metadata or {}
+        }
+    )
     return {"job_id": job_id, "status": "queued"}
 
 @app.get("/api/skool/jobs")
@@ -857,11 +1007,31 @@ async def analyse_item(item_id: str, background_tasks: BackgroundTasks):
         {"$set": {"intelligence_status": "running"}}
     )
 
+    # Get lesson context
+    description = item.get("description", "")
+    resource_links = item.get("resource_links", [])
+
     if transcript_text:
-        background_tasks.add_task(run_intelligence, item_id, transcript_text, item.get("title", ""), item.get("source", ""))
+        background_tasks.add_task(
+            run_intelligence,
+            item_id,
+            transcript_text,
+            item.get("title", ""),
+            item.get("source", ""),
+            description,
+            resource_links
+        )
     else:
         # Need to transcribe first
-        background_tasks.add_task(run_transcribe_then_analyse, item_id, item.get("source_url", ""), item.get("title", ""), item.get("source", ""))
+        background_tasks.add_task(
+            run_transcribe_then_analyse,
+            item_id,
+            item.get("source_url", ""),
+            item.get("title", ""),
+            item.get("source", ""),
+            description,
+            resource_links
+        )
 
     return {"message": "Analysis started", "item_id": item_id}
 
@@ -898,10 +1068,12 @@ async def run_transcription(item_id: str, source_url: str):
             {"$set": {"transcription_status": "failed", "transcript": {"error": str(e)}}}
         )
 
-async def run_intelligence(item_id: str, transcript_text: str, title: str, source: str):
-    """Background task: generate AI intelligence from transcript"""
+async def run_intelligence(item_id: str, transcript_text: str, title: str, source: str, description: str = "", resource_links: list = None):
+    """Background task: generate AI intelligence from transcript with lesson context"""
     try:
-        intelligence = await generate_content_intelligence(transcript_text, title, source)
+        intelligence = await generate_content_intelligence(
+            transcript_text, title, source, description, resource_links or []
+        )
         await db.media_library.update_one(
             {"item_id": item_id},
             {"$set": {
@@ -915,12 +1087,19 @@ async def run_intelligence(item_id: str, transcript_text: str, title: str, sourc
             {"$set": {"intelligence_status": "failed", "intelligence": {"error": str(e)}}}
         )
 
-async def run_transcribe_then_analyse(item_id: str, source_url: str, title: str, source: str):
-    """Transcribe then immediately analyse"""
+async def run_transcribe_then_analyse(item_id: str, source_url: str, title: str, source: str, description: str = "", resource_links: list = None):
+    """Transcribe then immediately analyse with lesson context"""
     await run_transcription(item_id, source_url)
     item = await db.media_library.find_one({"item_id": item_id})
     if item and item.get("transcript", {}).get("full_text"):
-        await run_intelligence(item_id, item["transcript"]["full_text"], title, source)
+        await run_intelligence(
+            item_id,
+            item["transcript"]["full_text"],
+            title,
+            source,
+            item.get("description", ""),
+            item.get("resource_links", [])
+        )
     else:
         await db.media_library.update_one(
             {"item_id": item_id},
