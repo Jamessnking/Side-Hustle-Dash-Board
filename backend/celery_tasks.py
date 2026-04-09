@@ -61,5 +61,23 @@ def analyze_video(self, item_id, transcript_text, title, source, description="",
     except Exception as e:
         return f"Analyzed: {item_id} - Failed: {str(e)}"
 
+@app.task(name='tasks.download_video', bind=True)
+def download_video(self, job_id, url, source, options=None):
+    """Celery task for video download"""
+    import sys
+    import os
+    sys.path.insert(0, '/app/backend')
+    
+    from sync_helpers import download_video_sync
+    
+    if options is None:
+        options = {}
+    
+    try:
+        result = download_video_sync(job_id, url, source, options)
+        return f"Downloaded: {job_id} - Success: {result}"
+    except Exception as e:
+        return f"Downloaded: {job_id} - Failed: {str(e)}"
+
 if __name__ == '__main__':
     app.start()

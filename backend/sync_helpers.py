@@ -7,6 +7,9 @@ import uuid
 import subprocess
 import tempfile
 import requests
+import json
+import re
+import hashlib
 from datetime import datetime, timezone
 from pymongo import MongoClient
 from pathlib import Path
@@ -19,6 +22,11 @@ db = client.ultimate_deployment
 # Environment variables
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', 'sk-emergent-v1-prod-ff5vNJO7BQg2')
 DROPBOX_TOKEN = os.environ.get('DROPBOX_ACCESS_TOKEN')
+DROPBOX_FOLDER = os.environ.get('DROPBOX_UPLOAD_FOLDER', '/UltimateDashboard')
+
+def make_url_fingerprint(url: str) -> str:
+    """Create a consistent hash for deduplication"""
+    return hashlib.sha256(url.strip().lower().encode()).hexdigest()[:16]
 
 def transcribe_video_sync(item_id: str, source_url: str):
     """Synchronous video transcription for Celery"""
@@ -235,6 +243,254 @@ Generate strategic content intelligence. Return ONLY valid JSON:
         return True
         
     except Exception as e:
+        print(f"  ❌ AI analysis failed: {e}")
+        db.media_library.update_one(
+            {"item_id": item_id},
+            {"$set": {
+                "intelligence_status": "failed",
+                "intelligence_error": str(e)
+            }}
+        )
+        return False
+
+def upload_to_dropbox_sync(local_path: str, source_type: str, filename: str):
+    """Synchronous Dropbox upload for Celery"""
+    import dropbox
+    
+    try:
+        dbx = dropbox.Dropbox(DROPBOX_TOKEN)
+        date_str = datetime.now().strftime("%Y-%m")
+        clean_name = re.sub(r'[^\w\s.-]', '_', filename)
+        dropbox_path = f"{DROPBOX_FOLDER}/{source_type}/{date_str}/{clean_name}"
+        
+        # Create folder
+        try:
+            dbx.files_create_folder_v2(f"{DROPBOX_FOLDER}/{source_type}/{date_str}")
+        except:
+            pass
+        
+        file_size = os.path.getsize(local_path)
+        CHUNK = 150 * 1024 * 1024  # 150MB chunks
+        
+        if file_size <= CHUNK:
+            with open(local_path, "rb") as f:
+                dbx.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode("overwrite"))
+        else:
+            # Chunked upload for large files
+            with open(local_path, "rb") as f:
+                first = f.read(CHUNK)
+                sess = dbx.files_upload_session_start(first)
+                cursor = dropbox.files.UploadSessionCursor(session_id=sess.session_id, offset=len(first))
+                
+                while True:
+                    chunk = f.read(CHUNK)
+                    if len(chunk) == 0:
+                        break
+                    dbx.files_upload_session_append_v2(chunk, cursor)
+                    cursor.offset += len(chunk)
+                
+                commit = dropbox.files.CommitInfo(path=dropbox_path, mode=dropbox.files.WriteMode("overwrite"))
+                dbx.files_upload_session_finish(b"", cursor, commit)
+        
+        # Get shareable link
+        shared = dbx.sharing_create_shared_link_with_settings(dropbox_path)
+        link = shared.url.replace("?dl=0", "?dl=1")
+        
+        return link, dropbox_path
+        
+    except Exception as e:
+        print(f"❌ Dropbox upload failed: {e}")
+        raise
+
+def download_video_sync(job_id: str, url: str, source: str, options: dict):
+    """Synchronous video download for Celery"""
+    print(f"📥 Download job {job_id[:8]}: {url[:50]}...")
+    
+    try:
+        # Dedup check
+        url_fp = make_url_fingerprint(url)
+        existing = db.media_library.find_one({"url_fingerprint": url_fp})
+        if existing:
+            db.download_jobs.update_one(
+                {"job_id": job_id},
+                {"$set": {
+                    "status": "complete",
+                    "progress": 100,
+                    "completed_at": datetime.utcnow(),
+                    "dropbox_link": existing.get("dropbox_link"),
+                    "media_item_id": existing.get("item_id"),
+                    "title": existing.get("title", ""),
+                    "filename": existing.get("filename", "")
+                }}
+            )
+            print(f"  ⚠️  Duplicate detected, reusing existing item")
+            return True
+        
+        # Update status
+        db.download_jobs.update_one(
+            {"job_id": job_id},
+            {"$set": {"status": "downloading", "started_at": datetime.utcnow(), "progress": 5}}
+        )
+        
+        # Create temp directory
+        temp_dir = tempfile.mkdtemp()
+        output_template = os.path.join(temp_dir, "%(title)s.%(ext)s")
+        
+        print(f"  📥 Downloading with yt-dlp...")
+        
+        # Build yt-dlp command
+        cmd = [
+            '/root/.venv/bin/yt-dlp',
+            '--output', output_template,
+            '--no-warnings',
+            '--ffmpeg-location', '/usr/bin/ffmpeg'
+        ]
+        
+        if source == "skool":
+            cmd += ["--format", "bestvideo[height<=720][ext=mp4]+bestaudio/best[height<=720]/best"]
+        elif source == "pinterest":
+            cmd += [
+                "--format",
+                "V_HLSV3_MOBILE-1431+V_HLSV3_MOBILE-audio1-1/V_HLSV3_MOBILE-783+V_HLSV3_MOBILE-audio1-1/bestvideo+bestaudio/best",
+                "--merge-output-format", "mp4"
+            ]
+        else:
+            cmd += ["--format", "best[ext=mp4]/best"]
+        
+        cmd.append(url)
+        
+        # Run download
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, cwd=temp_dir)
+        
+        if result.returncode != 0:
+            raise Exception(f"yt-dlp failed: {result.stderr[:200]}")
+        
+        # Find downloaded file
+        files = list(Path(temp_dir).glob("*"))
+        video_files = [f for f in files if f.suffix.lower() in ['.mp4', '.mkv', '.webm', '.mov']]
+        
+        if not video_files:
+            raise Exception("No video file found after download")
+        
+        video_file = video_files[0]
+        file_size = video_file.stat().st_size
+        
+        print(f"  ✅ Downloaded: {video_file.name} ({file_size / 1024 / 1024:.1f} MB)")
+        
+        # Update progress
+        db.download_jobs.update_one(
+            {"job_id": job_id},
+            {"$set": {"status": "uploading", "progress": 65, "filename": video_file.name, "file_size": file_size}}
+        )
+        
+        # Upload to Dropbox
+        print(f"  ☁️  Uploading to Dropbox...")
+        dropbox_link, dropbox_path = upload_to_dropbox_sync(str(video_file), source, video_file.name)
+        
+        print(f"  ✅ Uploaded to Dropbox")
+        
+        # Update progress
+        db.download_jobs.update_one(
+            {"job_id": job_id},
+            {"$set": {"progress": 75, "dropbox_link": dropbox_link}}
+        )
+        
+        # Get metadata
+        print(f"  📋 Extracting metadata...")
+        info_cmd = ['/root/.venv/bin/yt-dlp', '--dump-json', '--no-download', '--no-warnings', url]
+        info_proc = subprocess.run(info_cmd, capture_output=True, text=True, timeout=30)
+        
+        title = video_file.stem
+        duration = 0
+        thumbnail = ""
+        
+        if info_proc.returncode == 0 and info_proc.stdout.strip():
+            try:
+                info = json.loads(info_proc.stdout.strip().split('\n')[0])
+                title = info.get('title', title)
+                duration = info.get('duration', 0) or 0
+                thumbnail = info.get('thumbnail', '')
+            except:
+                pass
+        
+        # Create library item
+        media_item = {
+            "item_id": str(uuid.uuid4()),
+            "url_fingerprint": url_fp,
+            "title": title,
+            "source": source,
+            "source_url": url,
+            "filename": video_file.name,
+            "file_size": file_size,
+            "duration": duration,
+            "thumbnail": thumbnail,
+            "dropbox_link": dropbox_link,
+            "dropbox_path": dropbox_path,
+            "tags": [],
+            "is_broll": source == "pinterest",
+            "notes": "",
+            "description": options.get("description", ""),
+            "resource_links": options.get("resource_links", []),
+            "lesson_metadata": options.get("metadata", {}),
+            "transcript": None,
+            "intelligence": None,
+            "transcription_status": "pending",
+            "intelligence_status": "pending",
+            "created_at": datetime.utcnow(),
+            "job_id": job_id
+        }
+        
+        db.media_library.insert_one(media_item)
+        
+        print(f"  ✅ Created library item: {media_item['item_id']}")
+        
+        # Mark download complete
+        db.download_jobs.update_one(
+            {"job_id": job_id},
+            {"$set": {
+                "status": "complete",
+                "progress": 100,
+                "completed_at": datetime.utcnow(),
+                "media_item_id": media_item["item_id"],
+                "title": title
+            }}
+        )
+        
+        # Queue transcription if requested
+        transcribe = options.get("transcribe", False)
+        if transcribe:
+            print(f"  🎤 Queueing transcription...")
+            from celery_tasks import transcribe_video
+            transcribe_video.delay(media_item["item_id"], url)
+        
+        # Cleanup
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        
+        print(f"  ✅ Download job complete!")
+        return True
+        
+    except Exception as e:
+        print(f"  ❌ Download failed: {e}")
+        db.download_jobs.update_one(
+            {"job_id": job_id},
+            {"$set": {
+                "status": "failed",
+                "error": str(e)[:500],
+                "completed_at": datetime.utcnow()
+            }}
+        )
+        
+        # Cleanup on error
+        try:
+            import shutil
+            if 'temp_dir' in locals():
+                shutil.rmtree(temp_dir, ignore_errors=True)
+        except:
+            pass
+        
+        return False
+
         print(f"  ❌ AI analysis failed: {e}")
         db.media_library.update_one(
             {"item_id": item_id},
