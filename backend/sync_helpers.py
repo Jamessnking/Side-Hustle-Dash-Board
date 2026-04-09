@@ -31,25 +31,43 @@ def transcribe_video_sync(item_id: str, source_url: str):
             {"$set": {"transcription_status": "running"}}
         )
         
-        # Download video to temp file
-        temp_video = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False)
+        # Create temp directory for download
+        temp_dir = tempfile.mkdtemp()
+        video_path = os.path.join(temp_dir, 'video.mp4')
         
-        print(f"  📥 Downloading from: {source_url[:50]}...")
-        response = requests.get(source_url, stream=True, timeout=300)
+        print(f"  📥 Downloading with yt-dlp: {source_url[:50]}...")
         
-        for chunk in response.iter_content(chunk_size=8192):
-            temp_video.write(chunk)
+        # Use yt-dlp to download audio only (all we need for transcription)
+        yt_dlp_cmd = [
+            'yt-dlp',
+            '-f', 'bestaudio/best',  # Audio only is fine for transcription
+            '--extract-audio',
+            '--audio-format', 'mp3',
+            '-o', video_path.replace('.mp4', '.mp3'),  # Save as mp3
+            '--no-playlist',
+            '--no-check-certificate',
+            source_url
+        ]
         
-        temp_video.close()
-        video_path = temp_video.name
+        # Update video_path to mp3
+        audio_path = video_path.replace('.mp4', '.mp3')
         
-        print(f"  🎤 Running faster-whisper...")
+        result = subprocess.run(yt_dlp_cmd, capture_output=True, text=True, timeout=300)
         
-        # Run faster-whisper
+        if result.returncode != 0:
+            raise Exception(f"yt-dlp failed: {result.stderr}")
+        
+        # Check if audio file exists and has content
+        if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+            raise Exception("Downloaded audio file is empty or missing")
+        
+        print(f"  🎤 Running faster-whisper on audio...")
+        
+        # Run faster-whisper on the audio file
         from faster_whisper import WhisperModel
         
         model = WhisperModel("base", device="cpu", compute_type="int8")
-        segments, info = model.transcribe(video_path, beam_size=5)
+        segments, info = model.transcribe(audio_path, beam_size=5)
         
         # Build transcript
         full_text = []
@@ -79,8 +97,9 @@ def transcribe_video_sync(item_id: str, source_url: str):
             }}
         )
         
-        # Cleanup
-        os.unlink(video_path)
+        # Cleanup temp directory
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
         
         print(f"  ✅ Transcription complete: {len(full_text)} segments")
         return True
@@ -94,6 +113,13 @@ def transcribe_video_sync(item_id: str, source_url: str):
                 "transcription_error": str(e)
             }}
         )
+        # Cleanup on error
+        try:
+            import shutil
+            if 'temp_dir' in locals():
+                shutil.rmtree(temp_dir, ignore_errors=True)
+        except:
+            pass
         return False
 
 def analyze_video_sync(item_id: str, transcript_text: str, title: str, source: str, 
