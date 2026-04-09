@@ -38,11 +38,13 @@ def transcribe_video_sync(item_id: str, source_url: str):
         print(f"  📥 Downloading with yt-dlp: {source_url[:50]}...")
         
         # Use yt-dlp to download audio only (all we need for transcription)
+        # Use full paths for Celery worker compatibility
         yt_dlp_cmd = [
-            'yt-dlp',
+            '/root/.venv/bin/yt-dlp',  # Full path to yt-dlp for Celery workers
             '-f', 'bestaudio/best',  # Audio only is fine for transcription
             '--extract-audio',
             '--audio-format', 'mp3',
+            '--ffmpeg-location', '/usr/bin/ffmpeg',  # Explicitly set ffmpeg location for Celery workers
             '-o', video_path.replace('.mp4', '.mp3'),  # Save as mp3
             '--no-playlist',
             '--no-check-certificate',
