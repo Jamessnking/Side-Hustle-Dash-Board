@@ -1,12 +1,8 @@
 """
 Celery Configuration and Tasks for Video Processing
+Uses synchronous PyMongo for compatibility with forked workers
 """
 from celery import Celery
-import os
-import sys
-
-# Add current directory to path
-sys.path.insert(0, os.path.dirname(__file__))
 
 # Initialize Celery
 app = Celery(
@@ -28,56 +24,42 @@ app.conf.update(
     worker_max_tasks_per_child=50,  # Restart worker after 50 tasks
 )
 
-@app.task(name='tasks.transcribe_video')
-def transcribe_video(item_id, source_url):
+@app.task(name='tasks.transcribe_video', bind=True)
+def transcribe_video(self, item_id, source_url):
     """Celery task for video transcription"""
-    import asyncio
-    from server import run_transcription
+    import sys
+    import os
+    sys.path.insert(0, '/app/backend')
     
-    # Create new event loop for this task
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    from sync_helpers import transcribe_video_sync
     
     try:
-        loop.run_until_complete(run_transcription(item_id, source_url))
-        return f"Transcribed: {item_id}"
-    finally:
-        loop.close()
+        result = transcribe_video_sync(item_id, source_url)
+        return f"Transcribed: {item_id} - Success: {result}"
+    except Exception as e:
+        return f"Transcribed: {item_id} - Failed: {str(e)}"
 
-@app.task(name='tasks.analyze_video')
-def analyze_video(item_id, transcript_text, title, source, description="", resource_links=None):
+@app.task(name='tasks.analyze_video', bind=True)
+def analyze_video(self, item_id, transcript_text, title, source, description="", resource_links=None):
     """Celery task for AI intelligence generation"""
-    import asyncio
-    from server import run_intelligence
+    import sys
+    import os
+    sys.path.insert(0, '/app/backend')
     
-    # Create new event loop for this task
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    from sync_helpers import analyze_video_sync
     
     try:
-        loop.run_until_complete(run_intelligence(
+        result = analyze_video_sync(
             item_id,
             transcript_text,
             title,
             source,
             description,
             resource_links or []
-        ))
-        return f"Analyzed: {item_id}"
-    finally:
-        loop.close()
-
-@app.task(name='tasks.download_and_process')
-def download_and_process(job_id, url, source, options):
-    """Celery task for downloading and processing video"""
-    import asyncio
-    from server import run_download_job
-    
-    async def do_download():
-        await run_download_job(job_id, url, source, options)
-    
-    asyncio.run(do_download())
-    return f"Processed: {job_id}"
+        )
+        return f"Analyzed: {item_id} - Success: {result}"
+    except Exception as e:
+        return f"Analyzed: {item_id} - Failed: {str(e)}"
 
 if __name__ == '__main__':
     app.start()
