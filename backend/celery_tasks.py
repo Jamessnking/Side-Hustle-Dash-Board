@@ -1,14 +1,19 @@
 """
 Celery Configuration and Tasks for Video Processing
+Uses MongoDB as broker for persistence across container restarts
 Uses synchronous PyMongo for compatibility with forked workers
 """
 from celery import Celery
+import os
 
-# Initialize Celery
+# Get MongoDB URL from environment
+MONGO_URL = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
+
+# Initialize Celery with MongoDB as broker (persistent across restarts)
 app = Celery(
     'video_processor',
-    broker='redis://localhost:6379/0',
-    backend='redis://localhost:6379/1'
+    broker=f'{MONGO_URL}/celery_broker',
+    backend=f'{MONGO_URL}/celery_backend'
 )
 
 # Celery configuration
@@ -18,13 +23,21 @@ app.conf.update(
     result_serializer='json',
     timezone='UTC',
     enable_utc=True,
+    # MongoDB-specific settings
+    broker_connection_retry_on_startup=True,
+    broker_connection_retry=True,
+    broker_connection_max_retries=10,
+    # Task settings for reliability
+    task_acks_late=True,  # Don't lose tasks on worker crash
+    task_reject_on_worker_lost=True,
     task_track_started=True,
-    task_time_limit=1800,  # 30 minutes max per task
-    worker_prefetch_multiplier=1,  # Process one task at a time
-    worker_max_tasks_per_child=50,  # Restart worker after 50 tasks
+    task_time_limit=3600,  # 1 hour max per task
+    task_soft_time_limit=3300,  # Warning at 55 min
+    worker_prefetch_multiplier=1,  # Don't prefetch tasks
+    worker_max_tasks_per_child=50,  # Restart worker after 50 tasks (prevent memory leaks)
 )
 
-@app.task(name='tasks.transcribe_video', bind=True)
+@app.task(name='tasks.transcribe_video', bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 60})
 def transcribe_video(self, item_id, source_url):
     """Celery task for video transcription"""
     import sys
@@ -39,7 +52,7 @@ def transcribe_video(self, item_id, source_url):
     except Exception as e:
         return f"Transcribed: {item_id} - Failed: {str(e)}"
 
-@app.task(name='tasks.analyze_video', bind=True)
+@app.task(name='tasks.analyze_video', bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 30})
 def analyze_video(self, item_id, transcript_text, title, source, description="", resource_links=None):
     """Celery task for AI intelligence generation"""
     import sys
@@ -61,7 +74,7 @@ def analyze_video(self, item_id, transcript_text, title, source, description="",
     except Exception as e:
         return f"Analyzed: {item_id} - Failed: {str(e)}"
 
-@app.task(name='tasks.download_video', bind=True)
+@app.task(name='tasks.download_video', bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 2, 'countdown': 120})
 def download_video(self, job_id, url, source, options=None):
     """Celery task for video download"""
     import sys
@@ -79,7 +92,7 @@ def download_video(self, job_id, url, source, options=None):
     except Exception as e:
         return f"Downloaded: {job_id} - Failed: {str(e)}"
 
-@app.task(name='tasks.analyze_text_content', bind=True)
+@app.task(name='tasks.analyze_text_content', bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 30})
 def analyze_text_content(self, item_id, text_content, title, source):
     """Celery task for analyzing text content from OpenClaw"""
     import sys
