@@ -1393,3 +1393,154 @@ async def delete_dm_rule(rule_id: str):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
+
+
+# ─── OPENCLAW INTEGRATION ──────────────────────────────────────────────────────
+
+class OpenClawLesson(BaseModel):
+    url: str
+    title: str
+    description: str
+    video_url: Optional[str] = ""
+    comments: Optional[List[dict]] = []
+    resources: Optional[List[dict]] = []
+    metadata: Optional[dict] = {}
+
+class OpenClawSubmission(BaseModel):
+    lessons: List[OpenClawLesson]
+    source: Optional[str] = "openclaw_skool"
+
+@app.post("/api/openclaw/submit")
+async def openclaw_submit_data(submission: OpenClawSubmission):
+    """
+    API endpoint for OpenClaw to submit scraped Skool lesson data
+    
+    OpenClaw can POST JSON directly to this endpoint:
+    POST https://workflow-nexus-hub.preview.emergentagent.com/api/openclaw/submit
+    
+    Body: {
+        "lessons": [
+            {
+                "url": "https://www.skool.com/...",
+                "title": "Lesson title",
+                "description": "Full text content",
+                "video_url": "https://www.loom.com/...",
+                "comments": [...],
+                "resources": [...],
+                "metadata": {...}
+            }
+        ],
+        "source": "openclaw_skool"
+    }
+    """
+    from celery_tasks import analyze_text_content
+    
+    ingested = 0
+    updated = 0
+    analyzed = 0
+    errors = []
+    
+    for lesson in submission.lessons:
+        try:
+            # Check if lesson already exists
+            existing = await db.skool_text_content.find_one({"url": lesson.url})
+            
+            if existing:
+                # Update existing
+                await db.skool_text_content.update_one(
+                    {"url": lesson.url},
+                    {"$set": {
+                        "title": lesson.title,
+                        "description": lesson.description,
+                        "comments": lesson.comments,
+                        "resources": lesson.resources,
+                        "metadata": lesson.metadata,
+                        "video_url": lesson.video_url,
+                        "updated_at": datetime.utcnow()
+                    }}
+                )
+                item_id = existing['item_id']
+                updated += 1
+            else:
+                # Create new
+                item_id = str(uuid.uuid4())
+                await db.skool_text_content.insert_one({
+                    "item_id": item_id,
+                    "url": lesson.url,
+                    "title": lesson.title,
+                    "description": lesson.description,
+                    "comments": lesson.comments,
+                    "resources": lesson.resources,
+                    "metadata": lesson.metadata,
+                    "video_url": lesson.video_url,
+                    "text_intelligence": None,
+                    "intelligence_status": "pending",
+                    "created_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow()
+                })
+                ingested += 1
+            
+            # Queue AI analysis if there's content
+            if lesson.description and len(lesson.description) > 50:
+                # Build combined text
+                combined_text = f"{lesson.title}\n\n{lesson.description}"
+                
+                # Add comments
+                if lesson.comments:
+                    combined_text += "\n\nCOMMUNITY INSIGHTS:\n"
+                    for comment in lesson.comments[:5]:
+                        author = comment.get('author', 'Unknown')
+                        text = comment.get('text', '')
+                        combined_text += f"\n- {author}: {text}"
+                
+                # Add resources
+                if lesson.resources:
+                    combined_text += "\n\nRESOURCES:\n"
+                    for resource in lesson.resources:
+                        resource_title = resource.get('title', 'Link')
+                        resource_url = resource.get('url', '')
+                        combined_text += f"\n- {resource_title}: {resource_url}"
+                
+                # Queue for AI analysis
+                try:
+                    analyze_text_content.delay(item_id, combined_text, lesson.title, submission.source)
+                    analyzed += 1
+                except Exception as e:
+                    errors.append(f"Failed to queue analysis for {lesson.title}: {str(e)}")
+                    
+        except Exception as e:
+            errors.append(f"Failed to process {lesson.title}: {str(e)}")
+    
+    return {
+        "success": True,
+        "message": "OpenClaw data received and processed",
+        "summary": {
+            "total_submitted": len(submission.lessons),
+            "new_lessons": ingested,
+            "updated_lessons": updated,
+            "queued_for_analysis": analyzed,
+            "errors": errors
+        }
+    }
+
+@app.get("/api/openclaw/status")
+async def openclaw_status():
+    """Check status of OpenClaw submitted content"""
+    
+    total = await db.skool_text_content.count_documents({})
+    pending = await db.skool_text_content.count_documents({"intelligence_status": "pending"})
+    running = await db.skool_text_content.count_documents({"intelligence_status": "running"})
+    complete = await db.skool_text_content.count_documents({"intelligence_status": "complete"})
+    failed = await db.skool_text_content.count_documents({"intelligence_status": "failed"})
+    
+    return {
+        "total_lessons": total,
+        "analysis_status": {
+            "pending": pending,
+            "running": running,
+            "complete": complete,
+            "failed": failed
+        },
+        "completion_percentage": (complete / total * 100) if total > 0 else 0
+    }
+
