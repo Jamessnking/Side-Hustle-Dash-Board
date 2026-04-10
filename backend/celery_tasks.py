@@ -79,5 +79,20 @@ def download_video(self, job_id, url, source, options=None):
     except Exception as e:
         return f"Downloaded: {job_id} - Failed: {str(e)}"
 
+@app.task(name='tasks.analyze_text_content', bind=True)
+def analyze_text_content(self, item_id, text_content, title, source):
+    """Celery task for analyzing text content from OpenClaw"""
+    import sys
+    import os
+    sys.path.insert(0, '/app/backend')
+    
+    from sync_helpers import analyze_text_content_sync
+    
+    try:
+        result = analyze_text_content_sync(item_id, text_content, title, source)
+        return f"Analyzed text: {item_id} - Success: {result}"
+    except Exception as e:
+        return f"Analyzed text: {item_id} - Failed: {str(e)}"
+
 if __name__ == '__main__':
     app.start()

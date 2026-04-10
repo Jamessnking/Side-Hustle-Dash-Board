@@ -493,6 +493,100 @@ def download_video_sync(job_id: str, url: str, source: str, options: dict):
 
         print(f"  ❌ AI analysis failed: {e}")
         db.media_library.update_one(
+
+
+def analyze_text_content_sync(item_id: str, text_content: str, title: str, source: str):
+    """Synchronous AI analysis for text content (non-video)"""
+    print(f"🧠 Analyzing text: {title[:50]}")
+    
+    try:
+        # Update status
+        db.skool_text_content.update_one(
+            {"item_id": item_id},
+            {"$set": {"intelligence_status": "running"}}
+        )
+        
+        # Generate AI intelligence using Emergent LLM
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        
+        # Truncate text if too long
+        truncated = text_content[:8000] if len(text_content) > 8000 else text_content
+        
+        prompt = f"""You are an expert content strategist analyzing educational content.
+
+TITLE: {title}
+SOURCE: {source}
+
+CONTENT:
+{truncated}
+
+Generate strategic content intelligence for Instagram and social media marketing.
+Return ONLY valid JSON:
+
+{{
+  "summary": "2-3 sentence summary",
+  "key_learnings": ["learning 1", "learning 2", "learning 3", "learning 4", "learning 5"],
+  "instagram_strategy_insights": ["specific Instagram tactic 1", "specific Instagram tactic 2", "specific Instagram tactic 3"],
+  "content_hooks": [
+    {{"type": "question", "text": "hook text"}},
+    {{"type": "curiosity", "text": "hook text"}},
+    {{"type": "bold", "text": "hook text"}}
+  ],
+  "actionable_steps": ["step 1", "step 2", "step 3"],
+  "content_topics": ["topic 1", "topic 2", "topic 3"],
+  "target_audience": "audience description",
+  "viral_potential_tips": ["tip 1", "tip 2", "tip 3"]
+}}"""
+        
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=str(uuid.uuid4()),
+            system_message="You are an expert content strategist. Always respond with valid JSON only."
+        )
+        
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            response = loop.run_until_complete(chat.send_message(UserMessage(text=prompt)))
+        finally:
+            loop.close()
+        
+        # Parse JSON response
+        import json
+        text = response.strip()
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0].strip()
+        elif "```" in text:
+            text = text.split("```")[1].split("```")[0].strip()
+        
+        intelligence = json.loads(text)
+        
+        # Save to database
+        db.skool_text_content.update_one(
+            {"item_id": item_id},
+            {"$set": {
+                "text_intelligence": intelligence,
+                "intelligence_status": "complete",
+                "analyzed_at": datetime.utcnow()
+            }}
+        )
+        
+        print(f"  ✅ Text analysis complete")
+        return True
+        
+    except Exception as e:
+        print(f"  ❌ Text analysis failed: {e}")
+        db.skool_text_content.update_one(
+            {"item_id": item_id},
+            {"$set": {
+                "intelligence_status": "failed",
+                "intelligence_error": str(e)
+            }}
+        )
+        return False
+
             {"item_id": item_id},
             {"$set": {
                 "intelligence_status": "failed",
