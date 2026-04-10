@@ -13,6 +13,10 @@ import hashlib
 from datetime import datetime, timezone
 from pymongo import MongoClient
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv('/app/backend/.env')
 
 # MongoDB connection (sync)
 MONGO_URL = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
