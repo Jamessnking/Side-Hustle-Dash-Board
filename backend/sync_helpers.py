@@ -491,10 +491,6 @@ def download_video_sync(job_id: str, url: str, source: str, options: dict):
         
         return False
 
-        print(f"  ❌ AI analysis failed: {e}")
-        db.media_library.update_one(
-
-
 def analyze_text_content_sync(item_id: str, text_content: str, title: str, source: str):
     """Synchronous AI analysis for text content (non-video)"""
     print(f"🧠 Analyzing text: {title[:50]}")
@@ -579,14 +575,6 @@ Return ONLY valid JSON:
     except Exception as e:
         print(f"  ❌ Text analysis failed: {e}")
         db.skool_text_content.update_one(
-            {"item_id": item_id},
-            {"$set": {
-                "intelligence_status": "failed",
-                "intelligence_error": str(e)
-            }}
-        )
-        return False
-
             {"item_id": item_id},
             {"$set": {
                 "intelligence_status": "failed",
