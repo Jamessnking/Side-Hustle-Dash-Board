@@ -215,9 +215,9 @@
 
 ---
 
-## ✅ Phase 3 Completion Summary (Latest Update)
+## ✅ Phase 3 Completion Summary
 
-**Completed Date**: $(date +%Y-%m-%d)
+**Completed Date**: 2026-04-11
 **Test Results**: 100% pass (iteration_2.json)
 
 ### What Was Built:
@@ -248,6 +248,35 @@
 - `/app/frontend/src/pages/SkoolDownloader.js` - Added AI toggle switches
 - `/app/frontend/src/pages/PinterestDownloader.js` - Enhanced job tracking
 
-### Next Steps:
-Ready to proceed to **Phase 4: Instagram Graph API Management** or explore **Pyxa.ai alternatives for content creation**.
+---
+
+## 🔧 Phase 3.5 - Critical Bug Fix: Transcription Pipeline Recovery (COMPLETED)
+
+**Issue**: 57/131 video transcriptions were failing with "ffmpeg not found" errors, blocking the entire processing pipeline.
+
+**Root Cause**: ffmpeg was never properly installed on the system. The Celery workers couldn't extract audio from Loom HLS streams without ffmpeg.
+
+**Resolution** (2026-04-11):
+1. ✅ Installed ffmpeg via apt-get (`ffmpeg 5.1.8-0+deb12u1`)
+2. ✅ Verified ffmpeg accessible at `/usr/bin/ffmpeg` (path already configured in sync_helpers.py)
+3. ✅ Restarted Celery workers to pick up ffmpeg installation
+4. ✅ Requeued all 56 failed transcription tasks
+5. ✅ Created monitoring script: `/app/backend/monitor_transcription_progress.py`
+
+**Current Status**:
+- 📊 75 total videos downloaded
+- ✅ 19 transcribed (25.3%) - **actively processing**
+- 🔄 2 currently running
+- ⏳ 54 pending in queue
+- ❌ 0 failed
+- 🧠 18 AI analyzed
+
+**Timeline**: All 75 videos should complete transcription within 1-2 hours (average 2-3 minutes per video).
+
+**Files Created**:
+- `/app/backend/requeue_failed_transcriptions.py` - Utility to requeue failed tasks
+- `/app/backend/monitor_transcription_progress.py` - Real-time progress monitor
+
+**Next Steps**:
+The transcription pipeline is now **autonomous**. It will continue processing the backlog automatically. When complete, ready to proceed to **Phase 4: Instagram Graph API Management**.
 
