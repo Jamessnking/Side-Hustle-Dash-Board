@@ -31,8 +31,8 @@ app.conf.update(
     task_acks_late=True,  # Don't lose tasks on worker crash
     task_reject_on_worker_lost=True,
     task_track_started=True,
-    task_time_limit=3600,  # 1 hour max per task
-    task_soft_time_limit=3300,  # Warning at 55 min
+    task_time_limit=7200,  # 2 hours max per task (long videos need time)
+    task_soft_time_limit=6900,  # Warning at 115 min
     worker_prefetch_multiplier=1,  # Don't prefetch tasks
     worker_max_tasks_per_child=50,  # Restart worker after 50 tasks (prevent memory leaks)
 )
