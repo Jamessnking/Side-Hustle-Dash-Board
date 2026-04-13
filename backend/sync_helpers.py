@@ -33,10 +33,12 @@ def make_url_fingerprint(url: str) -> str:
     return hashlib.sha256(url.strip().lower().encode()).hexdigest()[:16]
 
 def transcribe_video_sync(item_id: str, source_url: str):
-    """Synchronous video transcription for Celery"""
+    """Synchronous video transcription using OpenAI Whisper API"""
     print(f"🎤 Transcribing: {item_id}")
     
     try:
+        from openai import OpenAI
+        
         # Update status to running
         db.media_library.update_one(
             {"item_id": item_id},
@@ -45,61 +47,65 @@ def transcribe_video_sync(item_id: str, source_url: str):
         
         # Create temp directory for download
         temp_dir = tempfile.mkdtemp()
-        video_path = os.path.join(temp_dir, 'video.mp4')
+        audio_path = os.path.join(temp_dir, 'audio.mp3')
         
-        print(f"  📥 Downloading with yt-dlp: {source_url[:50]}...")
+        print(f"  📥 Downloading audio with yt-dlp: {source_url[:50]}...")
         
-        # Use yt-dlp to download audio only (all we need for transcription)
-        # Use full paths for Celery worker compatibility
+        # Use yt-dlp to download audio only
         yt_dlp_cmd = [
-            '/root/.venv/bin/yt-dlp',  # Full path to yt-dlp for Celery workers
-            '-f', 'bestaudio/best',  # Audio only is fine for transcription
+            '/root/.venv/bin/yt-dlp',
+            '-f', 'bestaudio/best',
             '--extract-audio',
             '--audio-format', 'mp3',
-            '--ffmpeg-location', '/usr/bin/ffmpeg',  # Explicitly set ffmpeg location for Celery workers
-            '-o', video_path.replace('.mp4', '.mp3'),  # Save as mp3
+            '--ffmpeg-location', '/usr/bin/ffmpeg',
+            '-o', audio_path,
             '--no-playlist',
             '--no-check-certificate',
             source_url
         ]
         
-        # Update video_path to mp3
-        audio_path = video_path.replace('.mp4', '.mp3')
-        
         result = subprocess.run(yt_dlp_cmd, capture_output=True, text=True, timeout=300)
         
         if result.returncode != 0:
-            raise Exception(f"yt-dlp failed: {result.stderr}")
+            raise Exception(f"yt-dlp failed: {result.stderr[:200]}")
         
-        # Check if audio file exists and has content
+        # Check if audio file exists
         if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
             raise Exception("Downloaded audio file is empty or missing")
         
-        print(f"  🎤 Running faster-whisper on audio...")
+        print(f"  🎤 Transcribing with OpenAI Whisper API...")
         
-        # Run faster-whisper on the audio file
-        from faster_whisper import WhisperModel
+        # Use OpenAI Whisper API
+        openai_key = os.environ.get('OPENAI_API_KEY')
+        if not openai_key:
+            raise Exception("OPENAI_API_KEY not found in environment")
         
-        model = WhisperModel("base", device="cpu", compute_type="int8")
-        segments, info = model.transcribe(audio_path, beam_size=5)
+        client = OpenAI(api_key=openai_key)
         
-        # Build transcript
-        full_text = []
+        # Transcribe audio file
+        with open(audio_path, "rb") as audio_file:
+            transcription = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                response_format="verbose_json",  # Get timestamps
+                timestamp_granularities=["segment"]
+            )
+        
+        # Build transcript structure
         segments_list = []
-        
-        for segment in segments:
-            full_text.append(segment.text)
-            segments_list.append({
-                "start": segment.start,
-                "end": segment.end,
-                "text": segment.text
-            })
+        if hasattr(transcription, 'segments') and transcription.segments:
+            for segment in transcription.segments:
+                segments_list.append({
+                    "start": segment['start'],
+                    "end": segment['end'],
+                    "text": segment['text']
+                })
         
         transcript = {
-            "full_text": " ".join(full_text),
+            "full_text": transcription.text,
             "segments": segments_list,
-            "language": info.language,
-            "duration": info.duration
+            "language": getattr(transcription, 'language', 'en'),
+            "duration": getattr(transcription, 'duration', 0)
         }
         
         # Save to database
@@ -115,7 +121,7 @@ def transcribe_video_sync(item_id: str, source_url: str):
         import shutil
         shutil.rmtree(temp_dir, ignore_errors=True)
         
-        print(f"  ✅ Transcription complete: {len(full_text)} segments")
+        print(f"  ✅ Transcription complete: {len(segments_list)} segments")
         return True
         
     except Exception as e:
