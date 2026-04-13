@@ -96,9 +96,9 @@ def transcribe_video_sync(item_id: str, source_url: str):
         if hasattr(transcription, 'segments') and transcription.segments:
             for segment in transcription.segments:
                 segments_list.append({
-                    "start": segment['start'],
-                    "end": segment['end'],
-                    "text": segment['text']
+                    "start": segment.get('start') if isinstance(segment, dict) else getattr(segment, 'start', 0),
+                    "end": segment.get('end') if isinstance(segment, dict) else getattr(segment, 'end', 0),
+                    "text": segment.get('text') if isinstance(segment, dict) else getattr(segment, 'text', '')
                 })
         
         transcript = {
