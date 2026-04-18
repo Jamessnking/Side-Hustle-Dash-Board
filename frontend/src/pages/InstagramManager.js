@@ -34,6 +34,7 @@ export default function InstagramManager() {
   const [rules, setRules] = useState([]);
   const [bufferChannels, setBufferChannels] = useState([]);
   const [scheduledPosts, setScheduledPosts] = useState([]);
+  const [connectedIgAccounts, setConnectedIgAccounts] = useState([]);
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [showAddRule, setShowAddRule] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -80,6 +81,28 @@ export default function InstagramManager() {
     }
   };
 
+  const loadConnectedInstagram = async () => {
+    try {
+      const res = await axios.get(`${BACKEND_URL}/api/instagram/accounts`);
+      if (res.data.success) {
+        setConnectedIgAccounts(res.data.accounts);
+      }
+    } catch (e) {
+      console.error('Failed to load Instagram accounts:', e);
+    }
+  };
+
+  const handleConnectInstagram = async () => {
+    try {
+      const res = await axios.get(`${BACKEND_URL}/api/instagram/auth/login`);
+      if (res.data.auth_url) {
+        window.location.href = res.data.auth_url;
+      }
+    } catch (e) {
+      toast.error('Failed to initiate Instagram connection');
+    }
+  };
+
   const loadScheduledPosts = async () => {
     try {
       const res = await axios.get(`${BACKEND_URL}/api/buffer/posts?status=scheduled&limit=50`);
@@ -95,6 +118,7 @@ export default function InstagramManager() {
     loadAll();
     loadBufferChannels();
     loadScheduledPosts();
+    loadConnectedInstagram();
   }, []);
 
   // Account handlers
@@ -256,6 +280,49 @@ export default function InstagramManager() {
         title="Instagram Management"
         description="Schedule posts, manage accounts, and automate DMs with Buffer"
       />
+
+      {/* Instagram Connection Status */}
+      {connectedIgAccounts.length === 0 && (
+        <div className="mb-6 p-4 rounded-lg bg-primary/10 border border-primary/20">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Instagram className="w-5 h-5 text-primary" />
+              <div>
+                <p className="text-sm font-semibold text-foreground">Connect Your Instagram Account</p>
+                <p className="text-xs text-muted-foreground">Connect to start posting AI-generated Reels directly to Instagram</p>
+              </div>
+            </div>
+            <Button
+              onClick={handleConnectInstagram}
+              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white"
+              data-testid="connect-instagram-button"
+            >
+              <Instagram className="w-4 h-4 mr-2" />
+              Connect Instagram
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Connected Instagram Accounts */}
+      {connectedIgAccounts.length > 0 && (
+        <div className="mb-6 p-4 rounded-lg bg-green-500/10 border border-green-500/20">
+          <div className="flex items-center gap-3 mb-3">
+            <Check className="w-5 h-5 text-green-400" />
+            <p className="text-sm font-semibold text-foreground">Instagram Connected</p>
+          </div>
+          <div className="flex gap-3">
+            {connectedIgAccounts.map(account => (
+              <div key={account.ig_user_id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-background border border-border/50">
+                {account.profile_picture && (
+                  <img src={account.profile_picture} alt={account.username} className="w-6 h-6 rounded-full" />
+                )}
+                <span className="text-sm text-foreground">@{account.username}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <Tabs defaultValue="scheduler" className="w-full">
         <TabsList className="bg-muted/40 border border-border/70 mb-5">
