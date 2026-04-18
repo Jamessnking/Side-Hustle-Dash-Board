@@ -1614,7 +1614,8 @@ def generate_kling_jwt():
 async def call_kling_api(method: str, endpoint: str, payload: dict = None):
     """Make authenticated requests to Kling AI API"""
     token = generate_kling_jwt()
-    url = f"https://api.evolink.ai/v1/{endpoint}"
+    # Official Kling AI Singapore API endpoint (for international users)
+    url = f"https://api-singapore.klingai.com/{endpoint}"
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
@@ -1638,7 +1639,7 @@ async def poll_kling_task(task_id: str, job_id: str):
     
     while attempt < max_attempts:
         try:
-            result = await call_kling_api("GET", f"tasks/{task_id}")
+            result = await call_kling_api("GET", f"v1/videos/{task_id}")
             
             if result.get("code") != 0:
                 kling_tasks[job_id]["status"] = "failed"
@@ -1730,19 +1731,22 @@ async def generate_kling_video(request: KlingVideoRequest, background_tasks: Bac
     
     # Prepare request payload
     payload = {
-        "model": "kling-v3-text-to-video" if request.video_type == "text-to-video" else "kling-v3-image-to-video",
+        "model": "kling-v2.6-pro",
         "prompt": request.prompt,
         "duration": request.duration,
-        "quality": request.quality,
-        "aspect_ratio": request.aspect_ratio
+        "aspect_ratio": request.aspect_ratio,
+        "mode": "professional"
     }
     
     if request.video_type == "image-to-video" and request.image_url:
-        payload["image_start"] = request.image_url
+        payload["image"] = request.image_url
+        endpoint = "v1/videos/image2video"
+    else:
+        endpoint = "v1/videos/text2video"
     
     # Submit to Kling AI
     try:
-        result = await call_kling_api("POST", "videos/generations", payload)
+        result = await call_kling_api("POST", endpoint, payload)
         
         if result.get("code") != 0:
             raise HTTPException(status_code=400, detail=result.get("msg", "Failed to generate video"))
