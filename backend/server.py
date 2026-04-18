@@ -32,6 +32,7 @@ DROPBOX_TOKEN = os.getenv("DROPBOX_ACCESS_TOKEN", "")
 SKOOL_COOKIES = os.getenv("SKOOL_COOKIES_PATH", "/app/backend/skool_cookies.txt")
 DROPBOX_FOLDER = os.getenv("DROPBOX_UPLOAD_FOLDER", "/UltimateDashboard")
 EMERGENT_LLM_KEY = os.getenv("EMERGENT_LLM_KEY", "")
+BUFFER_API_KEY = os.getenv("BUFFER_API_KEY", "")
 SKOOL_AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3OTU3MjMzMDgsImlhdCI6MTc2NDE4NzMwOCwidXNlcl9pZCI6IjVmMDYzNDJkZDlkOTQ1MzI5ZWY4ZDNmYTM5MDVmMDhhIn0.56Tn2FIJSMzNKH7CslUQ864ARd09SDvZxDyFVTzhoN0"
 SKOOL_CLIENT_ID = "616914c797264fc0bca8d98e5bf1d09f"
 
@@ -685,6 +686,20 @@ class DMRule(BaseModel):
     response_message: str
     send_link: Optional[str] = ""
     is_active: bool = True
+
+# Buffer API models
+class BufferPostCreate(BaseModel):
+    text: str
+    channel_id: str
+    post_type: str = "feed"  # feed, reel, carousel
+    media_urls: Optional[List[str]] = []
+    scheduled_at: Optional[str] = None  # ISO 8601 datetime
+    scheduling_type: str = "automatic"  # automatic or notification
+    tags: Optional[List[str]] = []
+
+class BufferMediaUpload(BaseModel):
+    file_url: str
+    alt_text: Optional[str] = None
 
 
 # ─── ROOT ──────────────────────────────────────────────────────────────────────
@@ -1388,6 +1403,182 @@ async def get_dm_rules(account_id: Optional[str] = None):
 async def delete_dm_rule(rule_id: str):
     await db.dm_rules.delete_one({"rule_id": rule_id})
     return {"success": True}
+
+
+# ─── BUFFER API INTEGRATION ────────────────────────────────────────────────────
+
+async def call_buffer_api(method: str, endpoint: str = "", payload: dict = None):
+    """Make authenticated requests to Buffer API"""
+    if not BUFFER_API_KEY:
+        raise HTTPException(status_code=500, detail="Buffer API key not configured")
+    
+    # Buffer uses their REST API with access_token parameter
+    # The newer GraphQL API is still in beta and may have different auth
+    base_url = "https://api.bufferapp.com/1"
+    
+    headers = {
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        if method == "POST" and payload:
+            # For POST requests, add access token to URL
+            url = f"{base_url}/{endpoint}.json?access_token={BUFFER_API_KEY}"
+            response = requests.post(url, json=payload, headers=headers, timeout=30)
+        else:
+            # For GET requests
+            url = f"{base_url}/{endpoint}.json?access_token={BUFFER_API_KEY}"
+            response = requests.get(url, headers=headers, timeout=30)
+        
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Buffer API error: {str(e)}")
+
+@app.get("/api/buffer/channels")
+async def get_buffer_channels():
+    """Get all connected Buffer profiles (Instagram accounts)"""
+    try:
+        result = await call_buffer_api("GET", "profiles")
+        
+        if isinstance(result, list):
+            # Filter for Instagram profiles
+            instagram_profiles = [
+                {
+                    "id": profile.get("id"),
+                    "name": profile.get("formatted_username", profile.get("username", "Unknown")),
+                    "username": profile.get("formatted_username", profile.get("username")),
+                    "service": profile.get("service"),
+                    "timezone": profile.get("timezone")
+                }
+                for profile in result
+                if profile.get("service") == "instagram"
+            ]
+            return {"success": True, "channels": instagram_profiles}
+        
+        return {"success": False, "channels": [], "error": "Invalid response from Buffer"}
+    except HTTPException as e:
+        return {"success": False, "channels": [], "error": str(e.detail)}
+
+@app.post("/api/buffer/posts")
+async def create_buffer_post(post: BufferPostCreate):
+    """Create and schedule an Instagram post via Buffer REST API"""
+    
+    try:
+        # Build the post data for Buffer's REST API
+        post_data = {
+            "text": post.text,
+            "profile_ids": [post.channel_id],
+            "shorten": False
+        }
+        
+        # Add media URLs
+        if post.media_urls:
+            valid_media = [url for url in post.media_urls if url.strip()]
+            if valid_media:
+                post_data["media"] = {
+                    "photo": valid_media[0] if post.post_type != "reel" else None,
+                    "video": valid_media[0] if post.post_type == "reel" else None,
+                    "thumbnail": valid_media[1] if len(valid_media) > 1 and post.post_type == "reel" else None
+                }
+        
+        # Add scheduled time if provided
+        if post.scheduled_at:
+            # Buffer expects Unix timestamp
+            from datetime import datetime
+            scheduled_dt = datetime.fromisoformat(post.scheduled_at.replace('Z', '+00:00'))
+            post_data["scheduled_at"] = int(scheduled_dt.timestamp())
+        else:
+            # If no scheduled time, add to queue
+            post_data["now"] = False
+        
+        # Make API call
+        result = await call_buffer_api("POST", "updates/create", payload=post_data)
+        
+        if result.get("success"):
+            created_update = result.get("updates", [{}])[0] if "updates" in result else result
+            
+            # Store in database for tracking
+            doc = {
+                "post_id": created_update.get("id", str(uuid.uuid4())),
+                "channel_id": post.channel_id,
+                "text": post.text,
+                "post_type": post.post_type,
+                "status": "scheduled" if post.scheduled_at else "queued",
+                "media_count": len(post.media_urls) if post.media_urls else 0,
+                "scheduled_at": post.scheduled_at,
+                "created_at": datetime.utcnow(),
+                "buffer_response": created_update
+            }
+            await db.buffer_posts.insert_one(doc)
+            
+            return {
+                "success": True,
+                "post_id": created_update.get("id"),
+                "status": "scheduled" if post.scheduled_at else "queued",
+                "message": "Post created successfully"
+            }
+        else:
+            error_msg = result.get("message", "Unknown error")
+            raise HTTPException(status_code=400, detail=f"Buffer API error: {error_msg}")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create post: {str(e)}")
+
+@app.get("/api/buffer/posts")
+async def get_buffer_posts(status: str = "scheduled", limit: int = 50):
+    """Get scheduled or sent posts from Buffer"""
+    try:
+        # Buffer REST API uses 'pending' for scheduled posts
+        # Get all pending updates
+        result = await call_buffer_api("GET", f"profiles/{status}/updates/pending")
+        
+        if isinstance(result, dict) and "updates" in result:
+            posts = []
+            for update in result["updates"][:limit]:
+                posts.append({
+                    "id": update.get("id"),
+                    "text": update.get("text"),
+                    "createdAt": update.get("created_at"),
+                    "dueAt": update.get("due_at"),
+                    "status": status,
+                    "channel": {
+                        "id": update.get("profile_id"),
+                        "username": update.get("profile_service")
+                    }
+                })
+            return {"success": True, "posts": posts, "count": len(posts)}
+        
+        # If the above fails, try getting from our database
+        db_posts = await db.buffer_posts.find({}).sort("created_at", -1).limit(limit).to_list(limit)
+        posts = [serialize_doc(p) for p in db_posts]
+        return {"success": True, "posts": posts, "count": len(posts)}
+    
+    except Exception as e:
+        # Fallback to database
+        db_posts = await db.buffer_posts.find({}).sort("created_at", -1).limit(limit).to_list(limit)
+        posts = [serialize_doc(p) for p in db_posts]
+        return {"success": True, "posts": posts, "count": len(posts)}
+
+@app.delete("/api/buffer/posts/{post_id}")
+async def delete_buffer_post(post_id: str):
+    """Delete a scheduled Buffer post"""
+    try:
+        result = await call_buffer_api("POST", f"updates/{post_id}/destroy")
+        
+        if result.get("success"):
+            # Remove from local database
+            await db.buffer_posts.delete_one({"post_id": post_id})
+            return {"success": True}
+        else:
+            raise HTTPException(status_code=400, detail=result.get("message", "Failed to delete post"))
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete post: {str(e)}")
 
 
 if __name__ == "__main__":

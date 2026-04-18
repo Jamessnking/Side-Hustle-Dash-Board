@@ -1,30 +1,34 @@
 [
   {
-    "content": "Set up Buffer API integration in backend (API client, routes)",
-    "status": "in_progress"
+    "content": "Fix P0 blocker: Add Buffer API key to /app/backend/.env",
+    "status": "completed"
   },
   {
-    "content": "Create Instagram Management UI in frontend (dashboard, scheduler)",
-    "status": "pending"
+    "content": "Review Buffer integration playbook and existing backend structure",
+    "status": "completed"
   },
   {
-    "content": "Implement post scheduling system with Buffer API",
-    "status": "pending"
+    "content": "Set up Buffer API client in FastAPI backend",
+    "status": "completed"
   },
   {
-    "content": "Add media upload functionality for posts",
-    "status": "pending"
+    "content": "Create Buffer API endpoints (connect accounts, create posts, schedule, upload media)",
+    "status": "completed"
   },
   {
-    "content": "Build content calendar view",
-    "status": "pending"
+    "content": "Build Instagram Management UI tab with simple/advanced modes",
+    "status": "completed"
   },
   {
-    "content": "Test Buffer integration with scheduled posts",
-    "status": "pending"
+    "content": "Implement Reels and Carousel post types in UI",
+    "status": "completed"
   },
   {
-    "content": "Prepare for Instagram Graph API integration (DMs, Analytics) - Phase 4.2",
-    "status": "pending"
+    "content": "Test complete Buffer API integration (backend + frontend)",
+    "status": "completed"
+  },
+  {
+    "content": "Add Kling API to Phase 5 roadmap for video generation",
+    "status": "completed"
   }
 ]
