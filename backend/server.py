@@ -1639,24 +1639,26 @@ async def poll_kling_task(task_id: str, job_id: str):
     
     while attempt < max_attempts:
         try:
-            result = await call_kling_api("GET", f"v1/videos/{task_id}")
+            result = await call_kling_api("GET", f"v1/videos/text2video/{task_id}")
             
             if result.get("code") != 0:
                 kling_tasks[job_id]["status"] = "failed"
-                kling_tasks[job_id]["error"] = result.get("msg", "Unknown error")
+                kling_tasks[job_id]["error"] = result.get("message", "Unknown error")
                 break
             
             task_data = result.get("data", {})
             status = task_data.get("task_status")
             
             if status == "succeed":
-                # Get video URL
-                video_url = task_data.get("task_result", {}).get("video", [None])[0]
-                
-                if video_url:
-                    # Download video
-                    video_response = requests.get(video_url, timeout=60)
-                    video_response.raise_for_status()
+                # Get video URL from task_result
+                videos = task_data.get("task_result", {}).get("videos", [])
+                if videos and len(videos) > 0:
+                    video_url = videos[0].get("url")
+                    
+                    if video_url:
+                        # Download video
+                        video_response = requests.get(video_url, timeout=60)
+                        video_response.raise_for_status()
                     
                     # Save to Dropbox
                     filename = f"kling_{job_id}_{int(time.time())}.mp4"
@@ -1729,16 +1731,18 @@ async def generate_kling_video(request: KlingVideoRequest, background_tasks: Bac
     if len(request.prompt) > 2500:
         raise HTTPException(status_code=400, detail="Prompt cannot exceed 2500 characters")
     
-    # Prepare request payload
+    # Prepare request payload for Kling AI API
     payload = {
-        "model": "kling-v2.6-pro",
+        "model_name": "kling-v2-6",  # Latest stable model
         "prompt": request.prompt,
-        "duration": request.duration,
+        "duration": str(request.duration),  # Must be string
         "aspect_ratio": request.aspect_ratio,
-        "mode": "professional"
+        "mode": "pro",  # std or pro
+        "sound": "off"  # Turn off sound for now
     }
     
     if request.video_type == "image-to-video" and request.image_url:
+        # For image-to-video, different endpoint
         payload["image"] = request.image_url
         endpoint = "v1/videos/image2video"
     else:
