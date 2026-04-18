@@ -1,26 +1,30 @@
 [
   {
-    "content": "Store Kling AI credentials in .env file",
+    "content": "Build Kling AI Video Generator UI in Trend Analyzer",
     "status": "completed"
   },
   {
-    "content": "Implement Kling AI client wrapper in backend",
+    "content": "Add video generation form (prompt, duration, quality)",
     "status": "completed"
   },
   {
-    "content": "Create video generation API endpoints",
+    "content": "Add progress tracking and status polling",
     "status": "completed"
   },
   {
-    "content": "Build UI for AI video generation in Trend Analyzer",
-    "status": "in_progress"
+    "content": "Display generated videos with preview",
+    "status": "completed"
   },
   {
-    "content": "Connect generated videos to Content Library and Buffer",
+    "content": "Add 'Schedule to Instagram' button",
     "status": "pending"
   },
   {
-    "content": "Test complete Kling AI workflow end-to-end",
+    "content": "Document Meta Graph API as Buffer alternative",
+    "status": "in_progress"
+  },
+  {
+    "content": "Test Kling AI end-to-end workflow",
     "status": "pending"
   }
 ]

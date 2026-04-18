@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import {
   Download, Image, Library, Camera, TrendingUp,
   FileText, Layout, Plus, Settings, ChevronLeft,
-  ChevronRight, Layers, Zap, BarChart2, BookOpen
+  ChevronRight, Layers, Zap, BarChart2, BookOpen, Sparkles
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { ScrollArea } from './ui/scroll-area';
@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { path: '/library', label: 'Content Library', icon: Library, testid: 'content-library' },
   null, // separator
   { path: '/instagram', label: 'Instagram', icon: Camera, testid: 'instagram-manager' },
+  { path: '/ai-video', label: 'AI Video Gen', icon: Sparkles, testid: 'ai-video-generator' },
   { path: '/trends', label: 'Trend Analyser', icon: TrendingUp, testid: 'trend-analyser' },
   { path: '/prompts', label: 'Prompt Creator', icon: FileText, testid: 'prompt-creator' },
   { path: '/planner', label: 'Planner', icon: Layout, testid: 'kanban-planner' },

@@ -10,6 +10,7 @@ import PinterestDownloader from './pages/PinterestDownloader';
 import ContentLibrary from './pages/ContentLibrary';
 import InstagramManager from './pages/InstagramManager';
 import TrendAnalyser from './pages/TrendAnalyser';
+import AIVideoGenerator from './pages/AIVideoGenerator';
 import PromptCreator from './pages/PromptCreator';
 import KanbanPlanner from './pages/KanbanPlanner';
 import ModuleBuilder from './pages/ModuleBuilder';
@@ -41,6 +42,7 @@ function AppLayout({ modules }) {
             <Route path="/library" element={<ContentLibrary />} />
             <Route path="/instagram" element={<InstagramManager />} />
             <Route path="/trends" element={<TrendAnalyser />} />
+            <Route path="/ai-video" element={<AIVideoGenerator />} />
             <Route path="/prompts" element={<PromptCreator />} />
             <Route path="/planner" element={<KanbanPlanner />} />
             <Route path="/modules/new" element={<ModuleBuilder />} />
