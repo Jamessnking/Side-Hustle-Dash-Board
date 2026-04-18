@@ -5,7 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
-import os, json, re, hashlib, uuid, subprocess, tempfile, requests, asyncio, time
+import os, json, re, hashlib, uuid, subprocess, tempfile, requests, asyncio, time, jwt
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -33,6 +33,8 @@ SKOOL_COOKIES = os.getenv("SKOOL_COOKIES_PATH", "/app/backend/skool_cookies.txt"
 DROPBOX_FOLDER = os.getenv("DROPBOX_UPLOAD_FOLDER", "/UltimateDashboard")
 EMERGENT_LLM_KEY = os.getenv("EMERGENT_LLM_KEY", "")
 BUFFER_API_KEY = os.getenv("BUFFER_API_KEY", "")
+KLING_ACCESS_KEY = os.getenv("KLING_ACCESS_KEY", "")
+KLING_SECRET_KEY = os.getenv("KLING_SECRET_KEY", "")
 SKOOL_AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3OTU3MjMzMDgsImlhdCI6MTc2NDE4NzMwOCwidXNlcl9pZCI6IjVmMDYzNDJkZDlkOTQ1MzI5ZWY4ZDNmYTM5MDVmMDhhIn0.56Tn2FIJSMzNKH7CslUQ864ARd09SDvZxDyFVTzhoN0"
 SKOOL_CLIENT_ID = "616914c797264fc0bca8d98e5bf1d09f"
 
@@ -700,6 +702,15 @@ class BufferPostCreate(BaseModel):
 class BufferMediaUpload(BaseModel):
     file_url: str
     alt_text: Optional[str] = None
+
+# Kling AI models
+class KlingVideoRequest(BaseModel):
+    prompt: str
+    duration: int = 15  # 5-60 seconds
+    quality: str = "720p"  # 720p or 1080p
+    aspect_ratio: str = "9:16"  # 9:16, 16:9, or 1:1
+    video_type: str = "text-to-video"  # text-to-video or image-to-video
+    image_url: Optional[str] = None  # Required for image-to-video
 
 
 # ─── ROOT ──────────────────────────────────────────────────────────────────────
@@ -1579,6 +1590,215 @@ async def delete_buffer_post(post_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete post: {str(e)}")
+
+
+# ─── KLING AI VIDEO GENERATION ─────────────────────────────────────────────
+
+# In-memory task storage for Kling AI (use DB in production for persistence)
+kling_tasks = {}
+
+def generate_kling_jwt():
+    """Generate JWT token for Kling AI authentication"""
+    if not KLING_ACCESS_KEY or not KLING_SECRET_KEY:
+        raise HTTPException(status_code=500, detail="Kling AI credentials not configured")
+    
+    payload = {
+        "iss": KLING_ACCESS_KEY,
+        "exp": int(time.time()) + 1800,  # 30 minutes
+        "nbf": int(time.time()) - 5
+    }
+    
+    token = jwt.encode(payload, KLING_SECRET_KEY, algorithm="HS256", headers={"alg": "HS256", "typ": "JWT"})
+    return token
+
+async def call_kling_api(method: str, endpoint: str, payload: dict = None):
+    """Make authenticated requests to Kling AI API"""
+    token = generate_kling_jwt()
+    url = f"https://api.evolink.ai/v1/{endpoint}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        if method == "POST":
+            response = requests.post(url, json=payload, headers=headers, timeout=30)
+        else:
+            response = requests.get(url, headers=headers, timeout=30)
+        
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Kling AI API error: {str(e)}")
+
+async def poll_kling_task(task_id: str, job_id: str):
+    """Background task to poll Kling AI for video completion and upload to Dropbox"""
+    max_attempts = 300  # 5 minutes
+    attempt = 0
+    
+    while attempt < max_attempts:
+        try:
+            result = await call_kling_api("GET", f"tasks/{task_id}")
+            
+            if result.get("code") != 0:
+                kling_tasks[job_id]["status"] = "failed"
+                kling_tasks[job_id]["error"] = result.get("msg", "Unknown error")
+                break
+            
+            task_data = result.get("data", {})
+            status = task_data.get("task_status")
+            
+            if status == "succeed":
+                # Get video URL
+                video_url = task_data.get("task_result", {}).get("video", [None])[0]
+                
+                if video_url:
+                    # Download video
+                    video_response = requests.get(video_url, timeout=60)
+                    video_response.raise_for_status()
+                    
+                    # Save to Dropbox
+                    filename = f"kling_{job_id}_{int(time.time())}.mp4"
+                    dropbox_path = f"{DROPBOX_FOLDER}/kling-videos/{filename}"
+                    
+                    dbx = get_dropbox_client()
+                    dbx.files_upload(video_response.content, dropbox_path, mode=dropbox.files.WriteMode("overwrite"))
+                    
+                    # Create shared link
+                    try:
+                        shared_link = dbx.sharing_create_shared_link_with_settings(dropbox_path)
+                        dropbox_url = shared_link.url.replace('?dl=0', '?dl=1')
+                    except:
+                        links = dbx.sharing_list_shared_links(path=dropbox_path)
+                        dropbox_url = links.links[0].url.replace('?dl=0', '?dl=1') if links.links else ""
+                    
+                    # Save to media library
+                    media_doc = {
+                        "id": str(uuid.uuid4()),
+                        "filename": filename,
+                        "source_type": "kling-ai",
+                        "dropbox_url": dropbox_url,
+                        "metadata": {
+                            "model": "kling-v3",
+                            "prompt": kling_tasks[job_id].get("prompt", ""),
+                            "duration": kling_tasks[job_id].get("duration", 15),
+                            "quality": kling_tasks[job_id].get("quality", "720p"),
+                            "aspect_ratio": kling_tasks[job_id].get("aspect_ratio", "9:16")
+                        },
+                        "created_at": datetime.utcnow(),
+                        "tags": ["kling-ai", "ai-generated", "reel"]
+                    }
+                    await db.media_library.insert_one(media_doc)
+                    
+                    kling_tasks[job_id]["status"] = "completed"
+                    kling_tasks[job_id]["dropbox_url"] = dropbox_url
+                    kling_tasks[job_id]["media_id"] = media_doc["id"]
+                    break
+                else:
+                    kling_tasks[job_id]["status"] = "failed"
+                    kling_tasks[job_id]["error"] = "No video URL in response"
+                    break
+            
+            elif status == "failed":
+                kling_tasks[job_id]["status"] = "failed"
+                kling_tasks[job_id]["error"] = task_data.get("task_status_msg", "Generation failed")
+                break
+            
+            # Still processing
+            kling_tasks[job_id]["status"] = "processing"
+            await asyncio.sleep(2)  # Poll every 2 seconds
+            attempt += 1
+        
+        except Exception as e:
+            kling_tasks[job_id]["status"] = "failed"
+            kling_tasks[job_id]["error"] = str(e)
+            break
+    
+    if attempt >= max_attempts:
+        kling_tasks[job_id]["status"] = "timeout"
+        kling_tasks[job_id]["error"] = "Video generation timed out"
+
+@app.post("/api/kling/generate")
+async def generate_kling_video(request: KlingVideoRequest, background_tasks: BackgroundTasks):
+    """Generate AI video using Kling AI"""
+    
+    if request.duration < 5 or request.duration > 60:
+        raise HTTPException(status_code=400, detail="Duration must be between 5 and 60 seconds")
+    
+    if len(request.prompt) > 2500:
+        raise HTTPException(status_code=400, detail="Prompt cannot exceed 2500 characters")
+    
+    # Prepare request payload
+    payload = {
+        "model": "kling-v3-text-to-video" if request.video_type == "text-to-video" else "kling-v3-image-to-video",
+        "prompt": request.prompt,
+        "duration": request.duration,
+        "quality": request.quality,
+        "aspect_ratio": request.aspect_ratio
+    }
+    
+    if request.video_type == "image-to-video" and request.image_url:
+        payload["image_start"] = request.image_url
+    
+    # Submit to Kling AI
+    try:
+        result = await call_kling_api("POST", "videos/generations", payload)
+        
+        if result.get("code") != 0:
+            raise HTTPException(status_code=400, detail=result.get("msg", "Failed to generate video"))
+        
+        task_id = result["data"]["task_id"]
+        job_id = str(uuid.uuid4())
+        
+        # Store task info
+        kling_tasks[job_id] = {
+            "job_id": job_id,
+            "task_id": task_id,
+            "status": "processing",
+            "prompt": request.prompt,
+            "duration": request.duration,
+            "quality": request.quality,
+            "aspect_ratio": request.aspect_ratio,
+            "video_type": request.video_type,
+            "created_at": datetime.utcnow(),
+            "dropbox_url": None,
+            "media_id": None,
+            "error": None
+        }
+        
+        # Start background polling
+        background_tasks.add_task(poll_kling_task, task_id, job_id)
+        
+        return {
+            "success": True,
+            "job_id": job_id,
+            "task_id": task_id,
+            "status": "processing",
+            "message": "Video generation started. Poll /api/kling/status/{job_id} for updates"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start video generation: {str(e)}")
+
+@app.get("/api/kling/status/{job_id}")
+async def get_kling_status(job_id: str):
+    """Get status of a Kling AI video generation job"""
+    if job_id not in kling_tasks:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    return kling_tasks[job_id]
+
+@app.get("/api/kling/jobs")
+async def list_kling_jobs():
+    """List all Kling AI video generation jobs"""
+    return {
+        "jobs": list(kling_tasks.values()),
+        "total": len(kling_tasks)
+    }
+
+
 
 
 if __name__ == "__main__":

@@ -1,34 +1,26 @@
 [
   {
-    "content": "Fix P0 blocker: Add Buffer API key to /app/backend/.env",
+    "content": "Store Kling AI credentials in .env file",
     "status": "completed"
   },
   {
-    "content": "Review Buffer integration playbook and existing backend structure",
+    "content": "Implement Kling AI client wrapper in backend",
     "status": "completed"
   },
   {
-    "content": "Set up Buffer API client in FastAPI backend",
+    "content": "Create video generation API endpoints",
     "status": "completed"
   },
   {
-    "content": "Create Buffer API endpoints (connect accounts, create posts, schedule, upload media)",
-    "status": "completed"
+    "content": "Build UI for AI video generation in Trend Analyzer",
+    "status": "in_progress"
   },
   {
-    "content": "Build Instagram Management UI tab with simple/advanced modes",
-    "status": "completed"
+    "content": "Connect generated videos to Content Library and Buffer",
+    "status": "pending"
   },
   {
-    "content": "Implement Reels and Carousel post types in UI",
-    "status": "completed"
-  },
-  {
-    "content": "Test complete Buffer API integration (backend + frontend)",
-    "status": "completed"
-  },
-  {
-    "content": "Add Kling API to Phase 5 roadmap for video generation",
-    "status": "completed"
+    "content": "Test complete Kling AI workflow end-to-end",
+    "status": "pending"
   }
 ]
