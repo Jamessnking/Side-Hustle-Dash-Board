@@ -1656,47 +1656,32 @@ async def poll_kling_task(task_id: str, job_id: str):
                     video_url = videos[0].get("url")
                     
                     if video_url:
-                        # Download video
-                        video_response = requests.get(video_url, timeout=60)
-                        video_response.raise_for_status()
-                    
-                    # Save to Dropbox
-                    filename = f"kling_{job_id}_{int(time.time())}.mp4"
-                    dropbox_path = f"{DROPBOX_FOLDER}/kling-videos/{filename}"
-                    
-                    dbx = get_dropbox_client()
-                    dbx.files_upload(video_response.content, dropbox_path, mode=dropbox.files.WriteMode("overwrite"))
-                    
-                    # Create shared link
-                    try:
-                        shared_link = dbx.sharing_create_shared_link_with_settings(dropbox_path)
-                        dropbox_url = shared_link.url.replace('?dl=0', '?dl=1')
-                    except:
-                        links = dbx.sharing_list_shared_links(path=dropbox_path)
-                        dropbox_url = links.links[0].url.replace('?dl=0', '?dl=1') if links.links else ""
-                    
-                    # Save to media library
-                    media_doc = {
-                        "id": str(uuid.uuid4()),
-                        "filename": filename,
-                        "source_type": "kling-ai",
-                        "dropbox_url": dropbox_url,
-                        "metadata": {
-                            "model": "kling-v3",
-                            "prompt": kling_tasks[job_id].get("prompt", ""),
-                            "duration": kling_tasks[job_id].get("duration", 15),
-                            "quality": kling_tasks[job_id].get("quality", "720p"),
-                            "aspect_ratio": kling_tasks[job_id].get("aspect_ratio", "9:16")
-                        },
-                        "created_at": datetime.utcnow(),
-                        "tags": ["kling-ai", "ai-generated", "reel"]
-                    }
-                    await db.media_library.insert_one(media_doc)
-                    
-                    kling_tasks[job_id]["status"] = "completed"
-                    kling_tasks[job_id]["dropbox_url"] = dropbox_url
-                    kling_tasks[job_id]["media_id"] = media_doc["id"]
-                    break
+                        # Skip Dropbox upload for now (token expired)
+                        # Use Kling URL directly (valid for 30 days)
+                        
+                        # Save to media library
+                        media_doc = {
+                            "id": str(uuid.uuid4()),
+                            "filename": f"kling_{job_id}_{int(time.time())}.mp4",
+                            "source_type": "kling-ai",
+                            "dropbox_url": video_url,  # Using Kling URL directly
+                            "kling_url": video_url,
+                            "metadata": {
+                                "model": "kling-v2-6",
+                                "prompt": kling_tasks[job_id].get("prompt", ""),
+                                "duration": kling_tasks[job_id].get("duration", 15),
+                                "quality": kling_tasks[job_id].get("quality", "720p"),
+                                "aspect_ratio": kling_tasks[job_id].get("aspect_ratio", "9:16")
+                            },
+                            "created_at": datetime.utcnow(),
+                            "tags": ["kling-ai", "ai-generated", "reel"]
+                        }
+                        await db.media_library.insert_one(media_doc)
+                        
+                        kling_tasks[job_id]["status"] = "completed"
+                        kling_tasks[job_id]["dropbox_url"] = video_url
+                        kling_tasks[job_id]["media_id"] = media_doc["id"]
+                        break
                 else:
                     kling_tasks[job_id]["status"] = "failed"
                     kling_tasks[job_id]["error"] = "No video URL in response"
