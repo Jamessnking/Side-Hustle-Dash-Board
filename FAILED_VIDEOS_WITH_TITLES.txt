@@ -1,0 +1,83 @@
+FAILED DOWNLOADS - Video Titles
+================================================================================
+
+1. Video deleted or not found
+   URL: https://www.loom.com/share/8bd5f78ed0674cd899c77a59aba9e7e5
+   Status: Deleted
+
+2. Video deleted or not found
+   URL: https://www.loom.com/share/4097ed6e2ebb47f080e7ec893bf4b39e
+   Status: Deleted
+
+3. Video deleted or not found
+   URL: https://www.loom.com/share/1f9e9dbb76c447c195e3d12c1e64aecb
+   Status: Deleted
+
+4. Video deleted or not found
+   URL: https://www.loom.com/share/0d8bcfc92a6e42bda7a65df8df1cef27
+   Status: Deleted
+
+5. Video deleted or not found
+   URL: https://www.loom.com/share/78f43cd054ab4b63a61aa72bb93b7e09
+   Status: Deleted
+
+6. Video deleted or not found
+   URL: https://www.loom.com/share/0e71fca82b094eb18e6bfe64b23758fa
+   Status: Deleted
+
+7. Video deleted or not found
+   URL: https://www.loom.com/share/6d2ec78fb35e4b66bf3ff6db81ba17b8
+   Status: Deleted
+
+8. Video deleted or not found
+   URL: https://www.loom.com/share/77d96a6c6dd84c2786eb5f7ce9e9b2a2
+   Status: Deleted
+
+9. Video deleted or not found
+   URL: https://www.loom.com/share/62bf73b14d034b92ae9f1db59ff7ad7e
+   Status: Deleted
+
+10. Video deleted or not found
+   URL: https://www.loom.com/share/41d79e68125e479692cb7f10f3695ad8
+   Status: Deleted
+
+11. Video deleted or not found
+   URL: https://www.loom.com/share/dbd68d5c764f480299a51f26ee623dd0
+   Status: Deleted
+
+12. Video deleted or not found
+   URL: https://www.loom.com/share/e2c0f50d68384f0ab07e3b5d22b70c22
+   Status: Deleted
+
+13. Video deleted or not found
+   URL: https://www.loom.com/share/3f9bc48fa20b49558af6ebf8f58e4aec
+   Status: Deleted
+
+14. Video deleted or not found
+   URL: https://www.loom.com/share/04c2ecad02584c078a2a84e7c93e3f85
+   Status: Deleted
+
+15. Video deleted or not found
+   URL: https://www.loom.com/share/c2f5cf5cd44544e3a4ead35bedb90c58
+   Status: Deleted
+
+16. Video deleted or not found
+   URL: https://www.loom.com/share/0f3bf6f5b33e4af5add36e1fae1e6fa1
+   Status: Deleted
+
+17. Video deleted or not found
+   URL: https://www.loom.com/share/ae5fdc4e06d54df7900becc7d3af7e91
+   Status: Deleted
+
+18. Optimizing Your Stand Store for Maximum Conversions
+   URL: https://www.loom.com/share/60c68c61050e4276adaf00bb2c7d1b00
+   Status: Found
+
+19. Creating Effective Story Highlights for Your Profile
+   URL: https://www.loom.com/share/a72a9113e3ae4a689015ad3c9f8df806
+   Status: Found
+
+20. Mastering Batch Creation for Consistent Posting 📅
+   URL: https://www.loom.com/share/70d456047e8d40368d695490ba3aa802
+   Status: Found
+
