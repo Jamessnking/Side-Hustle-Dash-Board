@@ -1951,3 +1951,290 @@ async def openclaw_status():
         "completion_percentage": (complete / total * 100) if total > 0 else 0
     }
 
+
+
+# ─── INSTAGRAM GRAPH API OAUTH & POSTING ────────────────────────────────────
+
+# In-memory Instagram token storage (use DB in production)
+instagram_tokens = {}
+
+@app.get("/api/instagram/auth/login")
+async def instagram_auth_login():
+    """Generate Instagram OAuth authorization URL"""
+    
+    if not META_APP_ID or not META_REDIRECT_URI:
+        raise HTTPException(status_code=500, detail="Meta app not configured")
+    
+    # Instagram permissions for content publishing
+    scopes = [
+        "instagram_basic",
+        "instagram_content_publish",
+        "pages_show_list",
+        "pages_read_engagement"
+    ]
+    
+    # State for CSRF protection
+    state = str(uuid.uuid4())
+    
+    auth_url = (
+        f"https://www.facebook.com/v20.0/dialog/oauth?"
+        f"client_id={META_APP_ID}&"
+        f"redirect_uri={META_REDIRECT_URI}&"
+        f"scope={','.join(scopes)}&"
+        f"response_type=code&"
+        f"state={state}"
+    )
+    
+    return {
+        "auth_url": auth_url,
+        "state": state
+    }
+
+@app.get("/api/instagram/auth/callback")
+async def instagram_auth_callback(code: str, state: Optional[str] = None):
+    """Handle OAuth callback and exchange code for access token"""
+    
+    if not code:
+        raise HTTPException(status_code=400, detail="No authorization code provided")
+    
+    # Exchange code for short-lived token
+    token_url = "https://graph.facebook.com/v20.0/oauth/access_token"
+    
+    params = {
+        "client_id": META_APP_ID,
+        "client_secret": META_APP_SECRET,
+        "redirect_uri": META_REDIRECT_URI,
+        "code": code
+    }
+    
+    try:
+        response = requests.get(token_url, params=params, timeout=30)
+        response.raise_for_status()
+        token_data = response.json()
+        
+        short_lived_token = token_data["access_token"]
+        
+        # Exchange short-lived for long-lived token (60 days)
+        long_lived_url = "https://graph.facebook.com/v20.0/oauth/access_token"
+        long_lived_params = {
+            "grant_type": "fb_exchange_token",
+            "client_id": META_APP_ID,
+            "client_secret": META_APP_SECRET,
+            "fb_exchange_token": short_lived_token
+        }
+        
+        ll_response = requests.get(long_lived_url, params=long_lived_params, timeout=30)
+        ll_response.raise_for_status()
+        ll_data = ll_response.json()
+        
+        access_token = ll_data["access_token"]
+        expires_in = ll_data.get("expires_in", 5184000)  # 60 days
+        
+        # Get user's Facebook Pages
+        pages_url = f"https://graph.facebook.com/v20.0/me/accounts"
+        pages_response = requests.get(
+            pages_url,
+            params={"access_token": access_token},
+            timeout=30
+        )
+        pages_response.raise_for_status()
+        pages_data = pages_response.json()
+        
+        instagram_accounts = []
+        
+        # For each page, get Instagram Business Account
+        for page in pages_data.get("data", []):
+            page_id = page["id"]
+            page_token = page["access_token"]
+            
+            # Get Instagram Business Account ID
+            ig_url = f"https://graph.facebook.com/v20.0/{page_id}"
+            ig_response = requests.get(
+                ig_url,
+                params={
+                    "fields": "instagram_business_account",
+                    "access_token": page_token
+                },
+                timeout=30
+            )
+            ig_response.raise_for_status()
+            ig_data = ig_response.json()
+            
+            if "instagram_business_account" in ig_data:
+                ig_account_id = ig_data["instagram_business_account"]["id"]
+                
+                # Get Instagram account details
+                ig_details_url = f"https://graph.facebook.com/v20.0/{ig_account_id}"
+                ig_details_response = requests.get(
+                    ig_details_url,
+                    params={
+                        "fields": "id,username,profile_picture_url",
+                        "access_token": page_token
+                    },
+                    timeout=30
+                )
+                ig_details_response.raise_for_status()
+                ig_details = ig_details_response.json()
+                
+                # Store token
+                instagram_tokens[ig_account_id] = {
+                    "ig_user_id": ig_account_id,
+                    "username": ig_details.get("username"),
+                    "profile_picture": ig_details.get("profile_picture_url"),
+                    "access_token": page_token,
+                    "page_id": page_id,
+                    "expires_at": datetime.utcnow() + timedelta(seconds=expires_in),
+                    "connected_at": datetime.utcnow()
+                }
+                
+                instagram_accounts.append({
+                    "ig_user_id": ig_account_id,
+                    "username": ig_details.get("username"),
+                    "profile_picture": ig_details.get("profile_picture_url")
+                })
+        
+        if not instagram_accounts:
+            return {
+                "success": False,
+                "message": "No Instagram Business accounts found. Make sure your Instagram is connected to a Facebook Page.",
+                "redirect": "/#/instagram?error=no_accounts"
+            }
+        
+        return {
+            "success": True,
+            "accounts": instagram_accounts,
+            "message": f"Successfully connected {len(instagram_accounts)} Instagram account(s)!",
+            "redirect": "/#/instagram?success=true"
+        }
+    
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to authenticate: {str(e)}"
+        )
+
+@app.get("/api/instagram/accounts")
+async def get_instagram_accounts():
+    """Get list of connected Instagram accounts"""
+    accounts = []
+    for ig_id, data in instagram_tokens.items():
+        accounts.append({
+            "ig_user_id": ig_id,
+            "username": data.get("username"),
+            "profile_picture": data.get("profile_picture"),
+            "connected_at": data.get("connected_at"),
+            "expires_at": data.get("expires_at")
+        })
+    
+    return {
+        "success": True,
+        "accounts": accounts
+    }
+
+@app.post("/api/instagram/posts/reel")
+async def post_reel_to_instagram(
+    ig_user_id: str,
+    video_url: str,
+    caption: str = "",
+    cover_url: Optional[str] = None
+):
+    """Post a Reel to Instagram from a video URL"""
+    
+    if ig_user_id not in instagram_tokens:
+        raise HTTPException(
+            status_code=401,
+            detail="Instagram account not connected. Please connect first."
+        )
+    
+    token_data = instagram_tokens[ig_user_id]
+    access_token = token_data["access_token"]
+    
+    try:
+        # Step 1: Create media container for Reel
+        container_url = f"https://graph.facebook.com/v20.0/{ig_user_id}/media"
+        
+        container_params = {
+            "media_type": "REELS",
+            "video_url": video_url,
+            "caption": caption,
+            "share_to_feed": True,
+            "access_token": access_token
+        }
+        
+        if cover_url:
+            container_params["thumb_offset"] = 0
+        
+        container_response = requests.post(container_url, params=container_params, timeout=30)
+        container_response.raise_for_status()
+        container_data = container_response.json()
+        
+        creation_id = container_data["id"]
+        
+        # Step 2: Poll container status
+        max_attempts = 60
+        attempt = 0
+        
+        while attempt < max_attempts:
+            status_url = f"https://graph.facebook.com/v20.0/{creation_id}"
+            status_response = requests.get(
+                status_url,
+                params={
+                    "fields": "status_code",
+                    "access_token": access_token
+                },
+                timeout=30
+            )
+            status_response.raise_for_status()
+            status_data = status_response.json()
+            
+            status_code = status_data.get("status_code")
+            
+            if status_code == "FINISHED":
+                break
+            elif status_code == "ERROR":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Video processing failed. Check video format and size."
+                )
+            
+            await asyncio.sleep(2)
+            attempt += 1
+        
+        if attempt >= max_attempts:
+            raise HTTPException(
+                status_code=408,
+                detail="Video processing timeout. Try again later."
+            )
+        
+        # Step 3: Publish the container
+        publish_url = f"https://graph.facebook.com/v20.0/{ig_user_id}/media_publish"
+        publish_params = {
+            "creation_id": creation_id,
+            "access_token": access_token
+        }
+        
+        publish_response = requests.post(publish_url, params=publish_params, timeout=30)
+        publish_response.raise_for_status()
+        publish_data = publish_response.json()
+        
+        return {
+            "success": True,
+            "media_id": publish_data["id"],
+            "message": "Reel posted successfully to Instagram!",
+            "creation_id": creation_id
+        }
+    
+    except requests.exceptions.RequestException as e:
+        error_detail = str(e)
+        if hasattr(e, 'response') and e.response is not None:
+            try:
+                error_data = e.response.json()
+                error_detail = error_data.get("error", {}).get("message", str(e))
+            except:
+                pass
+        
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to post Reel: {error_detail}"
+        )
+

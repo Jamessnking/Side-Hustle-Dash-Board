@@ -1,30 +1,26 @@
 [
   {
-    "content": "Build Kling AI Video Generator UI in Trend Analyzer",
-    "status": "completed"
-  },
-  {
-    "content": "Add video generation form (prompt, duration, quality)",
-    "status": "completed"
-  },
-  {
-    "content": "Add progress tracking and status polling",
-    "status": "completed"
-  },
-  {
-    "content": "Display generated videos with preview",
-    "status": "completed"
-  },
-  {
-    "content": "Add 'Schedule to Instagram' button",
-    "status": "pending"
-  },
-  {
-    "content": "Document Meta Graph API as Buffer alternative",
+    "content": "Implement Instagram OAuth endpoints in backend",
     "status": "in_progress"
   },
   {
-    "content": "Test Kling AI end-to-end workflow",
+    "content": "Add token storage in database",
+    "status": "pending"
+  },
+  {
+    "content": "Create Instagram posting endpoints (Reels & Images)",
+    "status": "pending"
+  },
+  {
+    "content": "Add 'Connect Instagram' button in UI",
+    "status": "pending"
+  },
+  {
+    "content": "Add 'Post to Instagram' integration in AI Video Generator",
+    "status": "pending"
+  },
+  {
+    "content": "Test OAuth flow and posting",
     "status": "pending"
   }
 ]
