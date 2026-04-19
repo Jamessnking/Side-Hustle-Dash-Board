@@ -22,14 +22,7 @@ import { Label } from '../components/ui/label';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import { PageHeader } from '../components/shared';
 import { Card } from '../components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -518,9 +511,9 @@ export default function AIVideoGenerator() {
             {selectedJob && (
               <div className="p-3 rounded-lg bg-muted/20 border border-border/50">
                 <p className="text-xs text-muted-foreground mb-1">Video Prompt:</p>
-                <p className="text-xs text-foreground">{selectedJob.prompt}</p>
+                <p className="text-xs text-foreground">{selectedJob.prompt || 'No prompt'}</p>
                 <p className="text-xs text-muted-foreground mt-2">
-                  {selectedJob.duration}s • {selectedJob.quality} • {selectedJob.aspect_ratio}
+                  {selectedJob.duration || 0}s • {selectedJob.quality || 'N/A'} • {selectedJob.aspect_ratio || 'N/A'}
                 </p>
               </div>
             )}
