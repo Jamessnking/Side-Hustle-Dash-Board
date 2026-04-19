@@ -12,7 +12,9 @@ import {
   CheckCircle2,
   XCircle,
   Image as ImageIcon,
-  Play
+  Play,
+  Camera,
+  Send
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -20,6 +22,14 @@ import { Label } from '../components/ui/label';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import { PageHeader } from '../components/shared';
 import { Card } from '../components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -34,6 +44,12 @@ export default function AIVideoGenerator() {
   const [generating, setGenerating] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [pollingJobs, setPollingJobs] = useState(new Set());
+  
+  // Instagram posting state
+  const [showPostModal, setShowPostModal] = useState(false);
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [postCaption, setPostCaption] = useState('');
+  const [posting, setPosting] = useState(false);
 
   // Load existing jobs
   const loadJobs = async () => {
@@ -152,6 +168,43 @@ export default function AIVideoGenerator() {
       });
     } finally {
       setGenerating(false);
+    }
+  };
+
+  // Post to Instagram
+  const handlePostToInstagram = (job) => {
+    setSelectedJob(job);
+    setPostCaption(job.prompt || '');
+    setShowPostModal(true);
+  };
+
+  const handlePostSubmit = async () => {
+    if (!postCaption.trim()) {
+      toast.error('Please add a caption');
+      return;
+    }
+
+    setPosting(true);
+    try {
+      const res = await axios.post(`${BACKEND_URL}/api/instagram/posts/reel`, {
+        ig_user_id: '25800851899520548', // Your Instagram ID
+        video_url: selectedJob.dropbox_url,
+        caption: postCaption
+      });
+
+      if (res.data.success) {
+        toast.success('Posted to Instagram!', {
+          description: 'Your Reel is now live on @rj_applab'
+        });
+        setShowPostModal(false);
+        setPostCaption('');
+      }
+    } catch (e) {
+      toast.error('Failed to post to Instagram', {
+        description: e.response?.data?.detail || e.message
+      });
+    } finally {
+      setPosting(false);
     }
   };
 
@@ -366,23 +419,34 @@ export default function AIVideoGenerator() {
                       {job.prompt || 'No description'}
                     </p>
                     
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {job.duration}s • {job.quality}
                       </span>
-                      {job.status === 'completed' && job.dropbox_url && (
+                    </div>
+                    
+                    {job.status === 'completed' && job.dropbox_url && (
+                      <div className="flex gap-2 mt-2">
                         <a
                           href={job.dropbox_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-primary hover:underline flex items-center gap-1"
+                          className="flex-1 text-center px-3 py-1.5 rounded-lg border border-border/70 text-xs text-foreground hover:bg-muted/30 flex items-center justify-center gap-1"
                         >
                           <Download className="w-3 h-3" />
                           Download
                         </a>
-                      )}
-                    </div>
+                        <button
+                          onClick={() => handlePostToInstagram(job)}
+                          className="flex-1 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white text-xs flex items-center justify-center gap-1"
+                          data-testid="post-to-instagram-button"
+                        >
+                          <Camera className="w-3 h-3" />
+                          Post to IG
+                        </button>
+                      </div>
+                    )}
                     
                     {job.error && (
                       <p className="text-xs text-red-400 mt-2">Error: {job.error}</p>
@@ -419,6 +483,78 @@ export default function AIVideoGenerator() {
           </Card>
         </div>
       </div>
+
+      {/* Post to Instagram Modal */}
+      <Dialog open={showPostModal} onOpenChange={setShowPostModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Camera className="w-5 h-5 text-primary" />
+              Post to Instagram
+            </DialogTitle>
+            <DialogDescription>
+              Post this AI-generated Reel to @rj_applab
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div>
+              <Label className="text-xs text-muted-foreground mb-2 block">
+                Caption *
+              </Label>
+              <textarea
+                value={postCaption}
+                onChange={(e) => setPostCaption(e.target.value)}
+                placeholder="Write your caption... Add #hashtags and @mentions"
+                className="w-full rounded-lg border border-border/70 bg-background p-3 text-sm text-foreground resize-none focus:ring-2 focus:ring-primary/20"
+                rows={5}
+                data-testid="instagram-caption-input"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {postCaption.length} / 2200 characters
+              </p>
+            </div>
+
+            {selectedJob && (
+              <div className="p-3 rounded-lg bg-muted/20 border border-border/50">
+                <p className="text-xs text-muted-foreground mb-1">Video Prompt:</p>
+                <p className="text-xs text-foreground">{selectedJob.prompt}</p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {selectedJob.duration}s • {selectedJob.quality} • {selectedJob.aspect_ratio}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowPostModal(false)}
+              disabled={posting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handlePostSubmit}
+              disabled={posting || !postCaption.trim()}
+              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white"
+              data-testid="submit-instagram-post"
+            >
+              {posting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Posting...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 mr-2" />
+                  Post to Instagram
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
