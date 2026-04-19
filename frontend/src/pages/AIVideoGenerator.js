@@ -478,76 +478,73 @@ export default function AIVideoGenerator() {
       </div>
 
       {/* Post to Instagram Modal */}
-      <Dialog open={showPostModal} onOpenChange={setShowPostModal}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Camera className="w-5 h-5 text-primary" />
-              Post to Instagram
-            </DialogTitle>
-            <DialogDescription>
-              Post this AI-generated Reel to @rj_applab
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div>
-              <Label className="text-xs text-muted-foreground mb-2 block">
-                Caption *
-              </Label>
-              <textarea
-                value={postCaption}
-                onChange={(e) => setPostCaption(e.target.value)}
-                placeholder="Write your caption... Add #hashtags and @mentions"
-                className="w-full rounded-lg border border-border/70 bg-background p-3 text-sm text-foreground resize-none focus:ring-2 focus:ring-primary/20"
-                rows={5}
-                data-testid="instagram-caption-input"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                {postCaption.length} / 2200 characters
-              </p>
-            </div>
-
-            {selectedJob && (
-              <div className="p-3 rounded-lg bg-muted/20 border border-border/50">
-                <p className="text-xs text-muted-foreground mb-1">Video Prompt:</p>
-                <p className="text-xs text-foreground">{selectedJob.prompt || 'No prompt'}</p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  {selectedJob.duration || 0}s • {selectedJob.quality || 'N/A'} • {selectedJob.aspect_ratio || 'N/A'}
+      {showPostModal && selectedJob && (
+        <Dialog open={showPostModal} onOpenChange={setShowPostModal}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Camera className="w-5 h-5 text-primary" />
+                Post to Instagram
+              </DialogTitle>
+              <DialogDescription>
+                Post this AI-generated Reel to @rj_applab
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4 py-4">
+              <div>
+                <Label className="text-xs text-muted-foreground mb-2 block">
+                  Caption
+                </Label>
+                <textarea
+                  value={postCaption}
+                  onChange={(e) => setPostCaption(e.target.value)}
+                  placeholder="Write your caption... Add #hashtags and @mentions"
+                  className="w-full rounded-lg border border-border/70 bg-background p-3 text-sm text-foreground resize-none focus:ring-2 focus:ring-primary/20"
+                  rows={5}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {postCaption.length} / 2200 characters
                 </p>
               </div>
-            )}
-          </div>
 
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowPostModal(false)}
-              disabled={posting}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handlePostSubmit}
-              disabled={posting || !postCaption.trim()}
-              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white"
-              data-testid="submit-instagram-post"
-            >
-              {posting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Posting...
-                </>
-              ) : (
-                <>
-                  <Send className="w-4 h-4 mr-2" />
-                  Post to Instagram
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              <div className="p-3 rounded-lg bg-muted/20 border border-border/50">
+                <p className="text-xs text-muted-foreground mb-1">Video Details:</p>
+                <p className="text-xs text-foreground">
+                  {String(selectedJob.duration || 5)}s • {String(selectedJob.quality || '720p')} • {String(selectedJob.aspect_ratio || '9:16')}
+                </p>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setShowPostModal(false)}
+                disabled={posting}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handlePostSubmit}
+                disabled={posting || !postCaption.trim()}
+                className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white"
+              >
+                {posting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Posting...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 mr-2" />
+                    Post to Instagram
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
