@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { path: '/skool', label: 'Skool Downloader', icon: BookOpen, testid: 'skool-downloader' },
   { path: '/pinterest', label: 'Pinterest B-Roll', icon: Image, testid: 'pinterest-downloader' },
   { path: '/library', label: 'Content Library', icon: Library, testid: 'content-library' },
+  { path: '/master-plan', label: 'Master Plan', icon: Sparkles, testid: 'master-plan' },
   null, // separator
   { path: '/instagram', label: 'Instagram', icon: Camera, testid: 'instagram-manager' },
   { path: '/ai-video', label: 'AI Video Gen', icon: Sparkles, testid: 'ai-video-generator' },

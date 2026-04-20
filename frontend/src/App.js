@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import SkoolDownloader from './pages/SkoolDownloader';
 import PinterestDownloader from './pages/PinterestDownloader';
 import ContentLibrary from './pages/ContentLibrary';
+import MasterPlan from './pages/MasterPlan';
 import InstagramManager from './pages/InstagramManager';
 import TrendAnalyser from './pages/TrendAnalyser';
 import AIVideoGenerator from './pages/AIVideoGenerator';
@@ -40,6 +41,7 @@ function AppLayout({ modules }) {
             <Route path="/skool" element={<SkoolDownloader />} />
             <Route path="/pinterest" element={<PinterestDownloader />} />
             <Route path="/library" element={<ContentLibrary />} />
+            <Route path="/master-plan" element={<MasterPlan />} />
             <Route path="/instagram" element={<InstagramManager />} />
             <Route path="/trends" element={<TrendAnalyser />} />
             <Route path="/ai-video" element={<AIVideoGenerator />} />

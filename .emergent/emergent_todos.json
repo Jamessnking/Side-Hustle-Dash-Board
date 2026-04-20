@@ -1,26 +1,18 @@
 [
   {
-    "content": "Update plan.md to reflect real Phase 3 completion",
+    "content": "Add backend endpoints to serve master plan JSON + MD + download",
     "status": "completed"
   },
   {
-    "content": "Build aggregator script to extract all 75 videos' AI intelligence",
+    "content": "Create MasterPlan.js page in frontend with tabs (hooks/reels/carousels/schedule)",
     "status": "completed"
   },
   {
-    "content": "Generate INSTAGRAM_AUTOMATION_MASTER_PLAN.md from real data",
+    "content": "Add sidebar nav link + route",
     "status": "completed"
   },
   {
-    "content": "Generate INSTAGRAM_AUTOMATION_MASTER_PLAN.json from real data",
+    "content": "Screenshot-verify new page",
     "status": "completed"
-  },
-  {
-    "content": "Verify frontend Content Library shows 75 skool videos",
-    "status": "completed"
-  },
-  {
-    "content": "Offer Kanban push option to user",
-    "status": "in_progress"
   }
 ]
