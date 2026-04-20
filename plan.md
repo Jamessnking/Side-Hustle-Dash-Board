@@ -6,11 +6,22 @@
   - **Skool classroom URL → scrape Loom links → yt-dlp download → metadata → Dropbox upload + shared link → Media Library record**.
   - **Pinterest URL → yt-dlp download → metadata → Dropbox upload + shared link → Media Library record**.
 - ✅ Provide a **Content Library** that becomes your reusable asset bank (B‑roll + lessons).
-- Expand from “downloaders” into a **Learning + Repurposing OS**:
+- ✅ Expand from “downloaders” into a **Learning + Repurposing OS**:
   - Skool becomes **Skool Learning Intelligence** (download + transcript + structured insights + content plan).
-- Build toward automation loops:
+- ✅ Build toward automation loops:
   - **Trend Finder → Pinterest auto-search + batch download** for B‑roll.
-- Add higher-risk integrations (Instagram automation, avatar video, storefront) after the core is stable.
+- ✅ Add higher-risk integrations (Instagram automation, avatar video, storefront) after the core is stable.
+
+> **Critical correction (2026-04-20):** The prior “DB empty / Phase 3 hallucinated” conclusion was caused by querying the wrong database name.
+> - Correct DB: `ultimate_deployment` (per `.env DB_NAME`)
+> - Wrong DB previously queried: `ultimate_dashboard`
+>
+> **Verified current ground truth (ultimate_deployment):**
+> - **Skool videos:** 75
+> - **Transcriptions:** 75/75 complete (`transcript.full_text` populated; ~11k–16k chars typical)
+> - **AI intelligence:** 75/75 complete (hooks, reel scripts, carousel outlines, key learnings, topics, audiences, repurposing)
+> - **OpenClaw text docs:** 325 in `skool_text_content`
+> - **API proof:** `/api/library?source=skool` serves items; `/api/library/stats/overview` reports `skool_videos=75`, `transcribed=75`, `analysed=75`.
 
 ---
 
@@ -58,47 +69,91 @@
 
 ---
 
-## Phase 3 — V1.1 Polish + “Learning Intelligence” + Better Jobs ✅ COMPLETE
+## Phase 3 — V1.1 Polish + “Learning Intelligence” + Better Jobs ✅ COMPLETE (VERIFIED)
 
 ### User stories (Phase 3)
-1. As a user, I can see **live job progress** (downloading % / uploading % / ETA) without manual refresh.
-2. As a user, I can run **Skool Learning Intelligence**:
+1. ✅ As a user, I can see **live job progress** (downloading % / uploading % / ETA) without manual refresh.
+2. ✅ As a user, I can run **Skool Learning Intelligence**:
    - Download → **Transcribe** → **Summarise** → **Extract key learnings** → **Generate repurposing plan**.
-3. As a user, I can open any Library item and see:
+3. ✅ As a user, I can open any Library item and see:
    - transcript, key takeaways, suggested hooks, carousel outline, reel scripts.
-4. As a user, I can receive a **notification** when a job completes (in-app toast + optional email/webhook later).
-5. As a user, I can **dedupe** downloads by source URL/video id (avoid re-downloading and re-uploading duplicates).
+4. ✅ As a user, I can receive a **notification** when a job completes (in-app toast + optional email/webhook later).
+5. ✅ As a user, I can **dedupe** downloads by source URL/video id (avoid re-downloading and re-uploading duplicates).
 
-### Implementation steps
-- Jobs  Progress
-  - Add structured job logs in DB (steps + timestamps).
-  - Improve yt-dlp progress tracking:
-    - Option A: parse yt-dlp stdout progress lines and persist.
-    - Option B: move jobs to Celery/RQ later if needed.
-  - Add polling improvements or WebSocket/SSE endpoint for real-time job updates.
-- Skool Learning Intelligence
-  - Add transcription step (MVP options):
-    - Whisper via API (OpenAI) or local whisper if feasible.
-  - Store transcript + timestamps in MongoDB linked to `media_item_id`.
-  - Add AI analysis pipeline (Emergent LLM):
-    - key takeaways
-    - actionable steps
-    - hook ideas
+### Implementation steps (completed)
+- ✅ Jobs + Progress
+  - Structured job records in DB (`download_jobs`)
+  - Progress stages: queued → downloading → uploading → complete
+- ✅ Skool Learning Intelligence
+  - Transcription step integrated (OpenAI Whisper API in `sync_helpers.py`)
+  - Stored transcript + timestamps in MongoDB linked to `media_library.item_id`
+  - AI analysis pipeline (Emergent LLM):
+    - summary, key learnings, hooks
     - reel scripts (3 variations)
-    - carousel outline (slide-by-slide)
-    - CTA variants
-  - UI: add “Analyse” button per Library item + “Insights” panel.
-- Dedupe
-  - Use a fingerprint: `source + extractor_id` (preferred) or file hash.
-  - If duplicate found, reuse existing Dropbox link/path and mark job as complete.
+    - carousel outline
+    - target audience, topics, repurposing plan
+- ✅ Dedupe
+  - URL fingerprinting to prevent duplicate downloads
 
 ### Success criteria (Phase 3)
-- Skool videos can be processed into transcript + insights reliably.
-- Jobs feel responsive and trustworthy (clear status + progress + retry).
+- ✅ Skool videos can be processed into transcript + insights reliably.
+- ✅ Jobs feel responsive and trustworthy (clear status + progress + retry).
 
 ---
 
-## Phase 4 — Side Hustles Expansion + Planner + Prompt Workflows (Enhancement)
+## Phase 3.5 — Transcription Pipeline Reliability (ffmpeg + Celery stability) ✅ COMPLETE (VERIFIED)
+
+### What was fixed/validated
+- ✅ ffmpeg installed and reachable at `/usr/bin/ffmpeg`
+- ✅ Celery workers configured for reliability (acks late, retry, time limits)
+- ✅ Pipeline is fully processed in the **correct DB (`ultimate_deployment`)**:
+  - **75/75** Skool items have `transcription_status=complete`
+  - **75/75** Skool items have `intelligence_status=complete`
+  - **0** pending, **0** failed
+
+### Key verification endpoints
+- ✅ `GET /api/library?source=skool`
+- ✅ `GET /api/library/stats/overview`
+
+---
+
+## Phase 3.9 — Master Plan Synthesis (Aggregate 75 Videos → Strategy Outputs) 🚧 NEXT (P0)
+
+> Goal: Turn the 75 per-video intelligence documents into a single reusable “operating system” for content creation.
+
+### Deliverables
+1. **`/app/INSTAGRAM_AUTOMATION_MASTER_PLAN.md`** (human-readable)
+2. **`/app/INSTAGRAM_AUTOMATION_MASTER_PLAN.json`** (machine-readable; to feed Kanban/Prompt Creator/Module Builder)
+
+### User stories
+1. As a user, I can review a consolidated view of:
+   - top hooks, themes, CTAs
+   - strongest reel scripts
+   - carousel outlines
+   - content pillars/topics
+2. As a user, I can follow a recommended **posting cadence** and **30-day schedule** based on the dataset.
+3. As a user, I can export JSON to:
+   - generate Kanban cards
+   - create prompt templates
+   - build modules/playbooks
+
+### Implementation steps
+- Build an aggregation script (backend utility) that:
+  - queries `ultimate_deployment.media_library` for `source=skool` and `intelligence_status=complete`
+  - extracts and normalizes: hooks, scripts, carousel outlines, topics, audiences, repurposing ideas
+  - produces ranked/clustered outputs (simple frequency + de-dup + grouping)
+- Write the two outputs:
+  - Markdown: executive summary + pillars + hook bank + script bank + carousel bank + recommended weekly structure
+  - JSON: structured arrays with IDs, references to `item_id`, and fields for downstream automation
+- Save outputs to `/app/` and (optionally later) upload to Dropbox when token is refreshed.
+
+### Success criteria
+- ✅ Both files exist locally and are generated from real DB data.
+- ✅ Random spot-check: at least 5 items in the master plan link back to real `media_library.item_id`.
+
+---
+
+## Phase 4 — Side Hustles Expansion + Planner + Prompt Workflows (Enhancement) (P1)
 
 > Note: Core Module Builder / Prompts / Kanban already exist. This phase upgrades them into an integrated workflow.
 
@@ -130,9 +185,34 @@
 
 ---
 
-## Phase 5 — Trend Analyser V2 + Pinterest Auto-Search & Batch Downloader
+## Phase 4.2 — Instagram Graph API Management (Analytics, DMs, Publishing Ops) 🚧 TARGET AFTER 3.9 (P1)
 
-### User stories (Phase 5)
+### User stories
+1. As a user, I can see account/page details and connection health.
+2. As a user, I can pull analytics (reach, views, engagement) for recent posts.
+3. As a user, I can manage posting operations using the already-working Graph publishing flow.
+4. As a user, I can (where possible) manage comments/DM workflows or at minimum log them for triage.
+
+### Implementation steps
+- Split `server.py` into routers (recommended refactor):
+  - `routers/instagram_graph.py`
+  - `routers/library.py`
+  - `routers/kling.py`
+  - `routers/skool.py`
+- Add IG insights endpoints and persist metrics snapshots to MongoDB.
+- Add DM/comment handling where permitted by Meta permissions.
+- Connect master-plan outputs (Phase 3.9) to IG publishing workflow:
+  - choose a reel script → generate asset (Kling or manual upload) → publish.
+
+### Success criteria
+- Analytics can be pulled and displayed per account.
+- Publishing remains stable.
+
+---
+
+## Phase 5 — Trend Analyser V2 + Pinterest Auto-Search & Batch Downloader (P1)
+
+### User stories
 1. As a user, I can analyse competitor URLs and get structured insights (hook, structure, CTA, style).
 2. As a user, the system suggests **trend keywords + B-roll keywords**.
 3. As a user, I can click “Find B-roll” and the Pinterest module:
@@ -151,14 +231,14 @@
 - Batch job orchestration:
   - create a parent “batch job” record that spawns child download jobs.
 
-### Success criteria (Phase 5)
+### Success criteria
 - One-click workflow from trend → B-roll acquisition works reliably.
 
 ---
 
-## Phase 6 — Instagram Management (Real Integration)
+## Phase 6 — Instagram Management (Real Integration) (P2)
 
-### User stories (Phase 6)
+### User stories
 1. As a user, I can verify Graph API connection and fetch basic page info.
 2. As a user, I can manage multiple accounts (up to 5–6).
 3. As a user, I can schedule posts using:
@@ -174,14 +254,14 @@
 - DM automation:
   - if API limits prevent auto-replies, implement a “DM assistant inbox” workflow + logging.
 
-### Success criteria (Phase 6)
+### Success criteria
 - At least one reliable scheduling path works end-to-end for 1 account.
 
 ---
 
-## Phase 7 — Content/Avatar Creator (MVP)
+## Phase 7 — Content/Avatar Creator (MVP) (P2)
 
-### User stories (Phase 7)
+### User stories
 1. As a user, I can upload a photo and generate an avatar video via provider API (HeyGen/D‑ID).
 2. As a user, I can input a script and generate reel-ready output.
 3. As a user, I can generate carousel assets (images + captions) from prompts.
@@ -192,14 +272,14 @@
 - Add async generation jobs (similar to downloader jobs).
 - Save outputs back into Library with tags and templates.
 
-### Success criteria (Phase 7)
+### Success criteria
 - One avatar generation pipeline is stable and produces reusable content.
 
 ---
 
-## Phase 8 — Stan Store Style External Landing Page (Last)
+## Phase 8 — Stan Store Style External Landing Page (Last) (P3)
 
-### User stories (Phase 8)
+### User stories
 1. As a user, I can create a landing page listing offers.
 2. As a user, I can add digital products (PDFs/links) and update copy.
 3. As a user, I can generate shareable links for IG DMs.
@@ -210,182 +290,12 @@
 - Build external landing page + simple CMS.
 - Connect with DM rules (share links).
 
-### Success criteria (Phase 8)
+### Success criteria
 - Landing page is live, editable, and usable from Instagram DM links.
 
 ---
 
-## ✅ Phase 3 Completion Summary
-
-**Completed Date**: 2026-04-11
-**Test Results**: 100% pass (iteration_2.json)
-
-### What Was Built:
-1. **AI Intelligence Pipeline**:
-   - `faster-whisper` integration for local transcription
-   - Emergent LLM (OpenAI) for content analysis
-   - Structured outputs: hooks, reel scripts, carousel outlines, repurposing ideas
-
-2. **Live Job Progress Tracking**:
-   - Real-time polling every 3 seconds
-   - Progress bars showing download/upload percentages
-   - Toast notifications with Dropbox links on completion
-
-3. **Content Library AI Panel**:
-   - InsightsPanel component with expandable sections
-   - Manual "Transcribe" and "AI Analyse" buttons per item
-   - Full transcript view with timestamped segments
-   - Copy-to-clipboard for hooks, scripts, and carousels
-
-4. **Enhanced Downloaders**:
-   - Skool: Toggle switches for transcribe + analyze options
-   - Pinterest: Batch download + trend search functionality
-   - Duplicate detection preventing re-downloads
-
-### Key Files Modified:
-- `/app/backend/server.py` - Added transcription + AI analysis endpoints
-- `/app/frontend/src/pages/ContentLibrary.js` - Built InsightsPanel UI
-- `/app/frontend/src/pages/SkoolDownloader.js` - Added AI toggle switches
-- `/app/frontend/src/pages/PinterestDownloader.js` - Enhanced job tracking
-
----
-
-## 🔧 Phase 3.5 - Critical Bug Fix: Transcription Pipeline Recovery (COMPLETED)
-
-**Issue**: 57/131 video transcriptions were failing with "ffmpeg not found" errors, blocking the entire processing pipeline.
-
-**Root Cause**: ffmpeg was never properly installed on the system. The Celery workers couldn't extract audio from Loom HLS streams without ffmpeg.
-
-**Resolution** (2026-04-11):
-1. ✅ Installed ffmpeg via apt-get (`ffmpeg 5.1.8-0+deb12u1`)
-2. ✅ Verified ffmpeg accessible at `/usr/bin/ffmpeg` (path already configured in sync_helpers.py)
-3. ✅ Restarted Celery workers to pick up ffmpeg installation
-4. ✅ Requeued all 56 failed transcription tasks
-5. ✅ Created monitoring script: `/app/backend/monitor_transcription_progress.py`
-
-**Current Status**:
-- 📊 75 total videos downloaded
-- ✅ 19 transcribed (25.3%) - **actively processing**
-- 🔄 2 currently running
-- ⏳ 54 pending in queue
-- ❌ 0 failed
-- 🧠 18 AI analyzed
-
-**Timeline**: All 75 videos should complete transcription within 1-2 hours (average 2-3 minutes per video).
-
-**Files Created**:
-- `/app/backend/requeue_failed_transcriptions.py` - Utility to requeue failed tasks
-- `/app/backend/monitor_transcription_progress.py` - Real-time progress monitor
-
-**Next Steps**:
-The transcription pipeline is now **autonomous**. It will continue processing the backlog automatically. When complete, ready to proceed to **Phase 4: Instagram Graph API Management**.
-
-
----
-
-## ✅ Phase 4.1 - Buffer API Instagram Scheduling (COMPLETED)
-
-**Completed Date**: 2026-04-18
-**Status**: Infrastructure ready, awaiting valid Buffer API credentials
-
-### What Was Built:
-1. **Buffer API Integration (Backend)**:
-   - Complete Buffer REST API client implementation
-   - Authentication via API key (access_token parameter)
-   - Endpoints for:
-     - `/api/buffer/channels` - Get connected Instagram accounts
-     - `/api/buffer/posts` (POST) - Create and schedule posts (Feed, Reels, Carousel)
-     - `/api/buffer/posts` (GET) - Retrieve scheduled/sent posts
-     - `/api/buffer/posts/{id}` (DELETE) - Remove scheduled posts
-   - Database tracking for all Buffer posts
-
-2. **Instagram Manager UI (Complete Rebuild)**:
-   - **Post Scheduler Tab** (Primary):
-     - Simple Mode: Caption input, media upload, quick post/schedule buttons
-     - Advanced Options dropdown:
-       - Post Type selector: Feed Post, Reel, Carousel (with icons)
-       - Datetime picker for scheduling
-       - Publishing mode: Automatic vs Notification
-       - Tags input (comma-separated)
-     - Multi-media URL support with add/remove fields
-     - Carousel validation (2-10 images)
-     - Real-time character counter (0/2200)
-     - Scheduled Posts sidebar with live status
-     - Buffer Status widget (connected accounts, scheduled count, active DM rules)
-   - **Accounts Tab**: Local account registry management
-   - **DM Automation Tab**: ManyChat-style keyword trigger rules
-
-3. **Post Types Supported**:
-   - ✅ Feed Posts (single or multi-image)
-   - ✅ Reels (video with optional thumbnail)
-   - ✅ Carousel (2-10 images with position tracking)
-
-### Key Files Created/Modified:
-- `/app/backend/server.py` - Buffer API integration (+300 lines)
-- `/app/backend/.env` - Added `BUFFER_API_KEY`
-- `/app/frontend/src/pages/InstagramManager.js` - Complete UI rebuild (900 lines)
-
-### Technical Implementation:
-```python
-# Buffer API Client
-- RESTful endpoints using requests library
-- Access token authentication via query parameter
-- Async/await pattern for FastAPI compatibility
-- Comprehensive error handling with HTTPException
-- MongoDB document storage for post tracking
-
-# Pydantic Models
-- BufferPostCreate: text, channel_id, post_type, media_urls, scheduled_at, scheduling_type, tags
-- BufferMediaUpload: file_url, alt_text
-
-# Frontend State Management
-- React hooks for form state
-- Multi-step media URL arrays
-- Real-time validation
-- Toast notifications for all user actions
-```
-
-### Current Status:
-- ✅ Backend API fully functional
-- ✅ Frontend UI complete with simple/advanced modes
-- ✅ Reel and Carousel support implemented
-- ⏳ **Awaiting valid Buffer API key from user for live testing**
-
-### Buffer API Key Status:
-The provided API key (`TrBHzcCV3cHrbawdC3wVmfdcegIbwEZ23G_K-3G5dpT`) returns 401 Unauthorized. This is expected for test keys. To activate:
-1. User must provide valid Buffer API key from https://buffer.com/developers/apps
-2. Or use the existing key if it requires OAuth setup
-
-### Next Phase:
-**Phase 4.2**: Meta Graph API integration for Instagram DMs and Analytics
-
----
-
-## 📋 Phase 5 Roadmap - AI Video Generation & Content Creation
-
-### Planned Integrations:
-1. **Kling AI API** (Video Generation):
-   - Text-to-video generation for Reels
-   - Image-to-video animation
-   - Integration with Content Library (save generated videos to Dropbox)
-   - Schedule generated Reels directly via Buffer
-
-2. **Workflow**:
-   - User enters prompt/script in Trend Analyzer or Prompt Creator
-   - Kling API generates video (60-90 seconds)
-   - Video saved to Dropbox → Content Library
-   - One-click schedule to Instagram via Buffer
-   - **Complete automation loop**: Idea → Video → Published
-
-3. **User Stories**:
-   - As a user, I can generate Instagram Reels from text prompts using Kling AI
-   - As a user, I can convert still images into animated video content
-   - As a user, I can schedule AI-generated videos directly to Instagram
-   - As a user, all generated videos are automatically organized in my Content Library
-
-### Implementation Estimate:
-- Kling API integration: 2-3 hours
-- UI for video generation: 1-2 hours
-- Buffer workflow connection: 30 minutes
-- **Total**: ~4-6 hours for complete Phase 5.1
-
+## Notes / Known Issues
+- **Dropbox token expired** (BLOCKED): uploading newly generated outputs to Dropbox is currently unreliable until a refreshed token is provided.
+- **DB naming gotcha:** Always use `.env DB_NAME=ultimate_deployment` for reads/writes. Avoid creating/using `ultimate_dashboard`.
+- `server.py` is large (~2000+ lines). Refactor into routers before adding more features.

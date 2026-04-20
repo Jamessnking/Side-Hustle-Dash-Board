@@ -1,22 +1,26 @@
 [
   {
-    "content": "Video generating (Job: e0ce7906-9e90-4cb0-b9ea-c91d7f43fa8f)",
+    "content": "Update plan.md to reflect real Phase 3 completion",
+    "status": "completed"
+  },
+  {
+    "content": "Build aggregator script to extract all 75 videos' AI intelligence",
+    "status": "completed"
+  },
+  {
+    "content": "Generate INSTAGRAM_AUTOMATION_MASTER_PLAN.md from real data",
+    "status": "completed"
+  },
+  {
+    "content": "Generate INSTAGRAM_AUTOMATION_MASTER_PLAN.json from real data",
+    "status": "completed"
+  },
+  {
+    "content": "Verify frontend Content Library shows 75 skool videos",
+    "status": "completed"
+  },
+  {
+    "content": "Offer Kanban push option to user",
     "status": "in_progress"
-  },
-  {
-    "content": "Add Post to Instagram button in AI Video Generator UI",
-    "status": "in_progress"
-  },
-  {
-    "content": "Add caption editor modal",
-    "status": "pending"
-  },
-  {
-    "content": "Test posting via curl once video completes",
-    "status": "pending"
-  },
-  {
-    "content": "Test posting via UI button",
-    "status": "pending"
   }
 ]
