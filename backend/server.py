@@ -1968,7 +1968,7 @@ async def openclaw_submit_data(submission: OpenClawSubmission):
     API endpoint for OpenClaw to submit scraped Skool lesson data
     
     OpenClaw can POST JSON directly to this endpoint:
-    POST https://workflow-nexus-hub.preview.emergentagent.com/api/openclaw/submit
+    POST https://side-hustle-hub-43.preview.emergentagent.com/api/openclaw/submit
     
     Body: {
         "lessons": [

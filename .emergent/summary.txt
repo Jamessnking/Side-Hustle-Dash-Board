@@ -1,0 +1,172 @@
+<analysis>**original_problem_statement**: The user wants to create an all-in-one dashboard to manage multiple side hustles, containing modules for Instagram management, a Skool video downloader (to transcribe and extract AI insights), a Pinterest downloader, trend analyzer, prompt creator, Trello-style Kanban planner, and module builder. PRODUCT REQUIREMENTS: Unified premium dark-themed React UI, FastAPI backend, Skool/Pinterest scraping capabilities, OpenAI Whisper transcription, AI analysis of videos.
+
+**User's preferred language**: English (INSTRUCT next agent to respond in English only)
+
+**what currently exists?**: A fully functional React UI and FastAPI backend connected to MongoDB (). The previously lost Skool data (75 videos with AI intelligence and transcripts) was successfully located. A Master Plan UI tab has been added to display the AI-extracted hooks, reels, and carousels. The Instagram OAuth flow via Meta Graph API is fully configured using a static HTML bridge page on the user's custom domain. All deployment blockers (like ML dependencies and Kubernetes liveness probe crash loops) have been resolved.
+
+**Last working item**: 
+    - Last item agent was working: Fixing deployment blockers (removing ML packages, fixing  DB references, resolving  K8s crash loop, configuring Instagram OAuth redirect bridge).
+    - Status: USER VERIFICATION PENDING (User needs to deploy to production and verify the Instagram OAuth Connect flow).
+    - Agent Testing Done: Y
+    - Which testing method agent to use?: backend testing agent
+    - User Testing Done: N
+
+**All Pending/In progress Issue list**:  
+  Issue 1: Production Verification of Instagram OAuth Flow (P0)
+     - Attempted fixes: Built  bridge, configured , embedded  in OAuth state.
+     - Next debug checklist: Check if user successfully deployed and if  in production returns . If OAuth fails, verify the user added the correct environment variables in the Emergent dashboard.
+     - Why fix this issue and what will be achieved with the fix?: Finalizes Instagram integration for auto-posting.
+     - Status: USER VERIFICATION PENDING
+     - Is recurring issue? N
+     - Should Test frontend/backend/both after fix?: both
+     - Blocked on other issue: User action required to deploy.
+
+**In progress Task List**:
+  Task 1: Kanban Auto-Push (P1)
+     - Where to resume: Create logic to convert the top 20 reels + 10 carousels from the Master Plan into actionable cards in the Kanban planner module.
+     - What will be achieved with this?: Automates content scheduling.
+     - Status: NOT STARTED
+     - Should Test frontend/backend/both after fix?: both
+     - Blocked on something: None
+
+**Upcoming and Future Tasks**
+    Upcoming Tasks:
+    - Refactor  into FastAPI routers (Current file is >2300 lines) (P0)
+    - Phase 4.2: Instagram Graph API Management (Analytics, DMs) (P1)
+    - Phase 5: Trend Analyser & Content Generation features (Full integration) (P1)
+    
+    Future Tasks:
+    - Phase 6: Trello-style Kanban Planner tab implementation (P2)
+    - Phase 7: Custom Module Builder / Deployment tab (P2)
+    - Phase 8: External Landing Page generation (Stan Store style) editable from dashboard (P2)
+
+**Completed work in this session**
+- Diagnosed database mismatch and recovered 75 transcribed Skool videos (DONE)
+- Built aggregator script () to compile AI intelligence (DONE)
+- Created  UI with tabs for Hooks, Reels, Carousels, and Schedule (DONE)
+- Refreshed Dropbox Token and uploaded JSON/MD master plans (DONE)
+- Updated Instagram Meta OAuth to use  & custom domain bridge page () (DONE)
+- Fixed  Kubernetes crash loop by removing blocking Dropbox API calls (DONE)
+- Replaced  ML package with OpenAI Whisper API to pass deployment constraints (DONE)
+- Removed hardcoded DB references in  and  (DONE)
+- Fixed  which was improperly blocking  files (DONE)
+
+**Earlier issues found/mentioned but not fixed**
+None.
+
+**Known issue recurrence from previous fork**
+  - Issue recurrence in previous fork: Agent thought data was lost because previous agents wrote to  but the checking agent was looking at . 
+  - Recurrence count: 1
+  - Status: RESOLVED (Enforced  env variable universally).
+
+**Code Architecture**
+
+
+**Key Technical Concepts**
+React.js, TailwindCSS, Shadcn, FastAPI, MongoDB, Celery, OpenAI Whisper API, Emergent LLM, Kling AI API, Meta Graph API OAuth.
+
+**key DB schema**
+  - : {id, filename, source_type, dropbox_url, metadata, transcript, intelligence_status, ai_insights, created_at}
+  - : {job_id, type, source_url, status, progress, error}
+
+**changes in tech stack**
+  - Removed , , and  due to Emergent deployment constraints.
+  - Replaced local ML transcription with usage: openai [-h] [-v] [-b API_BASE] [-k API_KEY] [-p PROXY [PROXY ...]]
+              [-o ORGANIZATION] [-t {openai,azure}]
+              [--api-version API_VERSION] [--azure-endpoint AZURE_ENDPOINT]
+              [--azure-ad-token AZURE_AD_TOKEN] [-V]
+              {api,tools,migrate,grit} ...
+
+positional arguments:
+  {api,tools,migrate,grit}
+    api                 Direct API calls
+    tools               Client side tools for convenience
+
+options:
+  -h, --help            show this help message and exit
+  -v, --verbose         Set verbosity.
+  -b API_BASE, --api-base API_BASE
+                        What API base url to use.
+  -k API_KEY, --api-key API_KEY
+                        What API key to use.
+  -p PROXY [PROXY ...], --proxy PROXY [PROXY ...]
+                        What proxy to use.
+  -o ORGANIZATION, --organization ORGANIZATION
+                        Which organization to run as (will use your default
+                        organization if not specified)
+  -t {openai,azure}, --api-type {openai,azure}
+                        The backend API to call, must be `openai` or `azure`
+  --api-version API_VERSION
+                        The Azure API version, e.g.
+                        'https://learn.microsoft.com/en-us/azure/ai-
+                        services/openai/reference#rest-api-versioning'
+  --azure-endpoint AZURE_ENDPOINT
+                        The Azure endpoint, e.g.
+                        'https://endpoint.openai.azure.com'
+  --azure-ad-token AZURE_AD_TOKEN
+                        A token from Azure Active Directory,
+                        https://www.microsoft.com/en-
+                        us/security/business/identity-access/microsoft-entra-
+                        id
+  -V, --version         show program's version number and exit (Whisper API).
+
+**All files of reference** 
+  - : Created to aggregate intelligence from DB.
+  - : Created to display aggregated hooks/reels.
+  - : Created as a static bridge to handle Meta OAuth redirects.
+  - : Heavily updated for deployment fixes and OAuth state decoding.
+
+**Areas that need refactoring**: 
+  - : The file has reached over 2,300 lines. It is strongly recommended to break it down into modular FastAPI routers (e.g., , , ) before adding new features.
+
+**key api endpoints**
+  - : Starts Meta OAuth flow.
+  - : Processes OAuth code.
+  - : Debug endpoint to verify env vars in production.
+  - : Returns aggregated AI insights for UI.
+
+**Critical Info for New Agent**
+  - **Database Strictness**: Always use  from environment variables (defaults to ). Do not hardcode .
+  - **Deployment Restrictions**: The Emergent platform does not allow ML dependencies (, , etc.). Use external APIs (like OpenAI) instead.
+  - **Health Checks**: NEVER put external API calls (like Dropbox/OpenAI pings) in . It causes Kubernetes liveness probes to time out and crash-loop the pod. Use dedicated  endpoints instead.
+  - **Instagram OAuth**: The user is using their own domain () as the . The OAuth  parameter contains the base64-encoded backend URL to route the user back correctly.
+  - **No UI URL Leaks**: Ensure no preview/deployment URLs are hardcoded in the codebase.
+
+**documents and test reports created in this job**
+  - 
+  - 
+
+**Last 10 User Messages and any pending HUMAN messages** 
+ - User asked for instructions on Emergent deployment environment variables and dashboard location.
+ - Agent provided a detailed step-by-step guide to finding the Environment Variables section in the Emergent UI and a checklist of keys to confirm before hitting Deploy.
+ - *Pending Action*: User is currently deploying to production and verifying the Instagram configuration.
+
+**Project Health Check:**
+  - Broken: None.
+  - Mocked: None.
+
+**3rd Party Integrations**
+  - OpenAI GPT-4o — uses Emergent LLM Key.
+  - OpenAI Whisper API (Transcription) — requires User API Key.
+  - Kling AI (Video Generation) — requires User API Key.
+  - Meta Graph API (Instagram Publishing) — requires User API Key (OAuth Flow).
+  - Dropbox (File Storage) — requires User API Key (Token was just refreshed).
+
+**Testing status**
+  - Testing agent used after significant changes: NO (Deployment Agent used extensively instead)
+  - Troubleshoot agent used after agent stuck in loop: NO
+  - Test files created: None
+  - Known regressions: None currently.
+
+**Credentials to test flow:**
+  - All keys present in .
+
+**What agent forgot to execute**
+  - None.
+
+**Debugging checklist for current issue**
+    Issue: Instagram OAuth Production Verification
+    Frontend files to check:  (Static file hosted on user's domain)
+    Backend files to check:  (OAuth login/callback routes)
+    Database to check: None 
+    To verify: Run  on the deployed environment and confirm  is .</analysis>

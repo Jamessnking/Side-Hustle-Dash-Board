@@ -182,7 +182,7 @@ Step 2: For each of these 325 lesson URLs you already found:
 - Extract: Any video URLs
 
 Step 3: POST to API with CONTENT this time:
-Endpoint: https://workflow-nexus-hub.preview.emergentagent.com/api/openclaw/submit
+Endpoint: https://side-hustle-hub-43.preview.emergentagent.com/api/openclaw/submit
 
 Body format:
 {
@@ -211,7 +211,7 @@ Report when complete with number of lessons successfully scraped.
 - Check WhatsApp for status updates
 - Verify API receives content: 
   ```bash
-  curl https://workflow-nexus-hub.preview.emergentagent.com/api/openclaw/status
+  curl https://side-hustle-hub-43.preview.emergentagent.com/api/openclaw/status
   ```
 
 **This Deployment:**

@@ -224,7 +224,7 @@ def main(item_id, source_url):
 
 if __name__ == "__main__":
     item_id = "8b45f47d-6e0e-4020-81b5-df12be23ebc3"
-    source_url = "https://www.loom.com/share/071bff2fe7724d8c869c318539adf582?sid=e3659bfa-fc99-44d2-8e35-e337db7b55f8"
+    source_url = "https://www.loom.com/share/071bff2fe7724d8c869c318539adf582?sid=side-hustle-hub-43"
     
     success = main(item_id, source_url)
     sys.exit(0 if success else 1)

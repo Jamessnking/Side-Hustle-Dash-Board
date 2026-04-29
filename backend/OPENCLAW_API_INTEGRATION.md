@@ -4,12 +4,12 @@
 
 ### **Base URL:**
 ```
-https://workflow-nexus-hub.preview.emergentagent.com
+https://side-hustle-hub-43.preview.emergentagent.com
 ```
 
 ### **1. Submit Scraped Data (Main Endpoint)**
 ```
-POST https://workflow-nexus-hub.preview.emergentagent.com/api/openclaw/submit
+POST https://side-hustle-hub-43.preview.emergentagent.com/api/openclaw/submit
 ```
 
 **What it does:**
@@ -20,7 +20,7 @@ POST https://workflow-nexus-hub.preview.emergentagent.com/api/openclaw/submit
 
 ### **2. Check Processing Status**
 ```
-GET https://workflow-nexus-hub.preview.emergentagent.com/api/openclaw/status
+GET https://side-hustle-hub-43.preview.emergentagent.com/api/openclaw/status
 ```
 
 **What it does:**
@@ -52,7 +52,7 @@ For each lesson, extract:
 
 Important: Structure as JSON and POST to this API:
 
-Endpoint: https://workflow-nexus-hub.preview.emergentagent.com/api/openclaw/submit
+Endpoint: https://side-hustle-hub-43.preview.emergentagent.com/api/openclaw/submit
 
 Method: POST
 
@@ -91,7 +91,7 @@ After POSTing to the API, report back with the API response showing how many les
 
 **1. OpenClaw scrapes Skool** → Extracts lesson data
 
-**2. OpenClaw POSTs to your API** → `https://workflow-nexus-hub.preview.emergentagent.com/api/openclaw/submit`
+**2. OpenClaw POSTs to your API** → `https://side-hustle-hub-43.preview.emergentagent.com/api/openclaw/submit`
 
 **3. Your API receives data** → Stores in `skool_text_content` collection
 
@@ -107,7 +107,7 @@ After POSTing to the API, report back with the API response showing how many les
 
 ### **Check if API is working:**
 ```bash
-curl https://workflow-nexus-hub.preview.emergentagent.com/api/openclaw/status
+curl https://side-hustle-hub-43.preview.emergentagent.com/api/openclaw/status
 ```
 
 **Expected response:**
@@ -126,7 +126,7 @@ curl https://workflow-nexus-hub.preview.emergentagent.com/api/openclaw/status
 
 ### **After OpenClaw submits data:**
 ```bash
-curl https://workflow-nexus-hub.preview.emergentagent.com/api/openclaw/status
+curl https://side-hustle-hub-43.preview.emergentagent.com/api/openclaw/status
 ```
 
 **You'll see:**
@@ -164,7 +164,7 @@ If scraping specific lessons, prioritize these topics:
 You can test by sending sample data:
 
 ```bash
-curl -X POST https://workflow-nexus-hub.preview.emergentagent.com/api/openclaw/submit \
+curl -X POST https://side-hustle-hub-43.preview.emergentagent.com/api/openclaw/submit \
   -H "Content-Type: application/json" \
   -d '{
     "lessons": [
@@ -216,7 +216,7 @@ Once OpenClaw submits data, monitor with:
 
 ```bash
 # Check status
-curl https://workflow-nexus-hub.preview.emergentagent.com/api/openclaw/status
+curl https://side-hustle-hub-43.preview.emergentagent.com/api/openclaw/status
 
 # Or from backend
 cd /app/backend

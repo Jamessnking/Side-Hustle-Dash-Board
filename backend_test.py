@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 
 class Phase3APITester:
-    def __init__(self, base_url="https://workflow-nexus-hub.preview.emergentagent.com"):
+    def __init__(self, base_url="https://side-hustle-hub-43.preview.emergentagent.com"):
         self.base_url = base_url
         self.tests_run = 0
         self.tests_passed = 0
