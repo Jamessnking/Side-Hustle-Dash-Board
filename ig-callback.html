@@ -155,16 +155,26 @@
     /**
      * Instagram OAuth Callback Bridge
      * --------------------------------
-     * This page receives `?code=...&state=...` from Facebook, forwards the code
-     * to the Ultimate Deployment backend, and then redirects the user back into
-     * the dashboard with a success/failure flag.
+     * This page is HOSTED EXTERNALLY (e.g. https://rjdigitalsolutions.co.uk/ig-callback.html)
+     * because Meta requires a verified, stable callback domain. After Facebook
+     * redirects here with `?code=...&state=...`, this page forwards the code to
+     * the FastAPI backend at BACKEND_BASE and then redirects the user back
+     * into the dashboard.
      *
-     * Configure the backend domain below if it ever changes.
+     * Backend URL resolution (in priority order):
+     *   1. ?be=https://... query param (override for staging/testing)
+     *   2. window.IG_CALLBACK_BACKEND global (if injected)
+     *   3. DEFAULT_BACKEND constant below (production)
      */
-    const BACKEND_BASE = "https://workflow-nexus-hub.emergent.host";
+    const DEFAULT_BACKEND = "https://workflow-nexus-hub.emergent.host";
+    const params = new URLSearchParams(window.location.search);
+    const BACKEND_BASE = (
+      params.get("be") ||
+      (typeof window !== "undefined" && window.IG_CALLBACK_BACKEND) ||
+      DEFAULT_BACKEND
+    ).replace(/\/+$/, "");
     const DASHBOARD_URL = BACKEND_BASE + "/instagram";
 
-    const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
     const state = params.get("state");
     const error = params.get("error");

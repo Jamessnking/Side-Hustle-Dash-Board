@@ -12,7 +12,27 @@
     "status": "completed"
   },
   {
-    "content": "Invoke deployment_agent to diagnose deploy pipeline (latest code/env not deploying)",
+    "content": "Remove hardcoded SKOOL_AUTH_TOKEN/CLIENT_ID from server.py",
+    "status": "completed"
+  },
+  {
+    "content": "Replace faster-whisper with OpenAI Whisper API in server.py",
+    "status": "completed"
+  },
+  {
+    "content": "Remove faster-whisper, ctranslate2, onnxruntime from requirements.txt",
+    "status": "completed"
+  },
+  {
+    "content": "Strip .env-blocking patterns from .gitignore",
+    "status": "completed"
+  },
+  {
+    "content": "Make ig-callback.html backend URL configurable",
+    "status": "completed"
+  },
+  {
+    "content": "Provide user with redeploy checklist + env var list",
     "status": "in_progress"
   }
 ]
