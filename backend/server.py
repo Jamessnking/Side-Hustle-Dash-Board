@@ -1,4 +1,4 @@
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Query
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -46,6 +46,8 @@ META_REDIRECT_URI = (
 ).strip()
 SKOOL_AUTH_TOKEN = os.getenv("SKOOL_AUTH_TOKEN", "")
 SKOOL_CLIENT_ID = os.getenv("SKOOL_CLIENT_ID", "")
+# Public-facing frontend URL (used for absolute redirect hints in API responses)
+FRONTEND_URL = os.getenv("FRONTEND_URL", "").rstrip("/")
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -2095,7 +2097,7 @@ async def instagram_auth_config():
 
 
 @app.get("/api/instagram/auth/login")
-async def instagram_auth_login():
+async def instagram_auth_login(request: Request):
     """Generate Instagram OAuth authorization URL"""
     
     if not META_APP_ID or not META_REDIRECT_URI:
@@ -2109,8 +2111,19 @@ async def instagram_auth_login():
         "pages_read_engagement"
     ]
     
-    # State for CSRF protection
-    state = str(uuid.uuid4())
+    # Build `state` that carries: (a) CSRF nonce and (b) this backend's base URL.
+    # The external ig-callback.html bridge page reads the embedded URL so it never
+    # has to hardcode the backend host — it always calls back to the correct one.
+    import base64 as _b64
+    backend_base = (
+        os.getenv("BACKEND_PUBLIC_URL")
+        or FRONTEND_URL
+        or str(request.base_url).rstrip("/")
+    ).rstrip("/")
+    state_payload = {"n": str(uuid.uuid4()), "b": backend_base}
+    state = _b64.urlsafe_b64encode(
+        json.dumps(state_payload, separators=(",", ":")).encode()
+    ).decode().rstrip("=")
     
     auth_url = (
         f"https://www.facebook.com/v20.0/dialog/oauth?"
@@ -2233,14 +2246,14 @@ async def instagram_auth_callback(code: str, state: Optional[str] = None):
             return {
                 "success": False,
                 "message": "No Instagram Business accounts found. Make sure your Instagram is connected to a Facebook Page.",
-                "redirect": "/#/instagram?error=no_accounts"
+                "redirect": f"{FRONTEND_URL}/#/instagram?error=no_accounts"
             }
         
         return {
             "success": True,
             "accounts": instagram_accounts,
             "message": f"Successfully connected {len(instagram_accounts)} Instagram account(s)!",
-            "redirect": "/#/instagram?success=true"
+            "redirect": f"{FRONTEND_URL}/#/instagram?success=true"
         }
     
     except requests.exceptions.RequestException as e:

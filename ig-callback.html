@@ -158,27 +158,45 @@
      * This page is HOSTED EXTERNALLY (e.g. https://rjdigitalsolutions.co.uk/ig-callback.html)
      * because Meta requires a verified, stable callback domain. After Facebook
      * redirects here with `?code=...&state=...`, this page forwards the code to
-     * the FastAPI backend at BACKEND_BASE and then redirects the user back
-     * into the dashboard.
+     * the FastAPI backend and then bounces the user back into the dashboard.
      *
-     * Backend URL resolution (in priority order):
-     *   1. ?be=https://... query param (override for staging/testing)
-     *   2. window.IG_CALLBACK_BACKEND global (if injected)
-     *   3. DEFAULT_BACKEND constant below (production)
+     * Backend URL resolution (in priority order, NO hardcoded default):
+     *   1. ?be=https://... query parameter (override for testing)
+     *   2. The backend URL embedded inside the OAuth `state` param — the backend
+     *      base64url-encodes {n: nonce, b: backend_url} when building the auth URL
+     *   3. window.IG_CALLBACK_BACKEND global (if injected by hosting page)
      */
-    const DEFAULT_BACKEND = "https://workflow-nexus-hub.emergent.host";
     const params = new URLSearchParams(window.location.search);
-    const BACKEND_BASE = (
-      params.get("be") ||
-      (typeof window !== "undefined" && window.IG_CALLBACK_BACKEND) ||
-      DEFAULT_BACKEND
-    ).replace(/\/+$/, "");
-    const DASHBOARD_URL = BACKEND_BASE + "/instagram";
+
+    function base64UrlDecode(input) {
+      try {
+        const padded = input.replace(/-/g, "+").replace(/_/g, "/") +
+          "==".slice((input.length + 2) % 4);
+        return atob(padded);
+      } catch (e) { return null; }
+    }
+    function decodeBackendFromState(s) {
+      if (!s) return "";
+      const raw = base64UrlDecode(s);
+      if (!raw) return "";
+      try {
+        const obj = JSON.parse(raw);
+        return (obj && typeof obj.b === "string") ? obj.b : "";
+      } catch (e) { return ""; }
+    }
 
     const code = params.get("code");
     const state = params.get("state");
     const error = params.get("error");
     const errorReason = params.get("error_reason") || params.get("error_description");
+
+    const BACKEND_BASE = (
+      params.get("be") ||
+      decodeBackendFromState(state) ||
+      (typeof window !== "undefined" && window.IG_CALLBACK_BACKEND) ||
+      ""
+    ).replace(/\/+$/, "");
+    const DASHBOARD_URL = BACKEND_BASE ? (BACKEND_BASE + "/instagram") : "/";
 
     const content = document.getElementById("content");
 
@@ -219,6 +237,10 @@
       }
       if (!code) {
         renderError("Missing Authorization Code", "Facebook did not return an authorization code in the redirect URL.");
+        return;
+      }
+      if (!BACKEND_BASE) {
+        renderError("Backend URL Not Found", "Could not determine the backend URL from the OAuth state. Contact support if this persists.");
         return;
       }
 
