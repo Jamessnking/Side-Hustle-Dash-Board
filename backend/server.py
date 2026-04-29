@@ -1048,6 +1048,16 @@ async def download_master_plan(fmt: str):
     return FileResponse(path, media_type=media_type, filename=filename)
 
 
+@app.get("/api/instagram/auth/callback-html")
+async def get_ig_callback_html():
+    """Serve the static ig-callback.html bridge page so it can be hosted externally."""
+    path = "/app/ig-callback.html"
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="ig-callback.html not found")
+    return FileResponse(path, media_type="text/html", filename="ig-callback.html")
+
+
+
 @app.post("/api/master-plan/regenerate")
 async def regenerate_master_plan():
     """Re-run the aggregation script against current DB state."""

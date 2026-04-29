@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connecting Instagram… | RJ Digital Solutions</title>
+  <meta name="robots" content="noindex,nofollow" />
+  <style>
+    :root {
+      --bg-1: #0b0d12;
+      --bg-2: #11141b;
+      --card: #161a23;
+      --border: #1f2430;
+      --text: #e6e9ef;
+      --muted: #9aa1ad;
+      --accent: #34d399;
+      --accent-soft: #064e3b;
+      --danger: #f87171;
+      --danger-soft: #4c1d1d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: radial-gradient(ellipse at top, var(--bg-2), var(--bg-1));
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px 28px;
+      max-width: 460px;
+      width: 100%;
+      box-shadow: 0 24px 48px rgba(0,0,0,0.4);
+      text-align: center;
+    }
+    .logo {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 16px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #34d399, #10b981);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #0b0d12;
+      font-weight: 800;
+      font-size: 20px;
+    }
+    h1 {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0 0 6px;
+      letter-spacing: -0.01em;
+    }
+    p {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.55;
+      margin: 0 0 20px;
+    }
+    .spinner {
+      width: 32px;
+      height: 32px;
+      margin: 16px auto;
+      border-radius: 50%;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .badge-success {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .badge-error {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--danger-soft);
+      color: var(--danger);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .btn {
+      display: inline-block;
+      background: var(--accent);
+      color: #0b0d12;
+      text-decoration: none;
+      font-weight: 600;
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+    .btn:hover { transform: translateY(-1px); opacity: 0.92; }
+    .btn-secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .accounts {
+      text-align: left;
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin: 12px 0 16px;
+      font-size: 13px;
+    }
+    .accounts li {
+      list-style: none;
+      padding: 4px 0;
+      color: var(--text);
+    }
+    code {
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px;
+      color: var(--muted);
+      background: var(--bg-1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="logo">RJ</div>
+    <div id="content">
+      <h1>Connecting your Instagram…</h1>
+      <p>Please wait while we securely complete the OAuth handshake with Meta.</p>
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * Instagram OAuth Callback Bridge
+     * --------------------------------
+     * This page receives `?code=...&state=...` from Facebook, forwards the code
+     * to the Ultimate Deployment backend, and then redirects the user back into
+     * the dashboard with a success/failure flag.
+     *
+     * Configure the backend domain below if it ever changes.
+     */
+    const BACKEND_BASE = "https://workflow-nexus-hub.emergent.host";
+    const DASHBOARD_URL = BACKEND_BASE + "/instagram";
+
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const state = params.get("state");
+    const error = params.get("error");
+    const errorReason = params.get("error_reason") || params.get("error_description");
+
+    const content = document.getElementById("content");
+
+    function renderError(title, detail) {
+      content.innerHTML =
+        '<div class="badge-error">⚠ Failed</div>' +
+        '<h1>' + title + '</h1>' +
+        '<p>' + (detail || "Something went wrong during Instagram authentication.") + '</p>' +
+        '<a class="btn" href="' + DASHBOARD_URL + '?error=oauth_failed">Back to Dashboard</a>';
+    }
+
+    function renderSuccess(payload) {
+      const accounts = (payload && payload.accounts) || [];
+      let listHtml = "";
+      if (accounts.length) {
+        listHtml = '<ul class="accounts">' +
+          accounts.map(function(a) {
+            return '<li>✓ <strong>@' + (a.username || "unknown") + '</strong></li>';
+          }).join("") + '</ul>';
+      }
+      content.innerHTML =
+        '<div class="badge-success">✓ Connected</div>' +
+        '<h1>Instagram linked successfully</h1>' +
+        '<p>' + (payload.message || ("Connected " + accounts.length + " account(s).")) + '</p>' +
+        listHtml +
+        '<a class="btn" href="' + DASHBOARD_URL + '?success=true">Open Dashboard</a>';
+
+      // Auto-redirect after 2.5s for a smooth UX
+      setTimeout(function() {
+        window.location.href = DASHBOARD_URL + "?success=true";
+      }, 2500);
+    }
+
+    async function exchangeCode() {
+      if (error) {
+        renderError("Authorization Cancelled", errorReason || error);
+        return;
+      }
+      if (!code) {
+        renderError("Missing Authorization Code", "Facebook did not return an authorization code in the redirect URL.");
+        return;
+      }
+
+      try {
+        const url =
+          BACKEND_BASE +
+          "/api/instagram/auth/callback?code=" +
+          encodeURIComponent(code) +
+          (state ? "&state=" + encodeURIComponent(state) : "");
+
+        const resp = await fetch(url, { method: "GET" });
+        const data = await resp.json().catch(function() { return null; });
+
+        if (!resp.ok) {
+          const msg = (data && (data.detail || data.message)) || ("HTTP " + resp.status);
+          renderError("Token Exchange Failed", msg);
+          return;
+        }
+
+        if (data && data.success === false) {
+          renderError("Connection Issue", data.message || "Unable to find a connected Instagram Business account.");
+          return;
+        }
+
+        renderSuccess(data || {});
+      } catch (err) {
+        renderError("Network Error", String(err && err.message ? err.message : err));
+      }
+    }
+
+    exchangeCode();
+  </script>
+</body>
+</html>
