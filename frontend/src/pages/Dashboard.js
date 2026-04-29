@@ -9,25 +9,32 @@ export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [recentJobs, setRecentJobs] = useState([]);
   const [recentLibrary, setRecentLibrary] = useState([]);
-  const [health, setHealth] = useState(null);
+  const [dropboxStatus, setDropboxStatus] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const loadData = async () => {
     try {
-      const [statsRes, jobsRes, libRes, healthRes] = await Promise.all([
+      // Core dashboard data (fast, no external calls) — must succeed
+      const [statsRes, jobsRes, libRes] = await Promise.all([
         axios.get(`${BACKEND_URL}/api/library/stats/overview`),
         axios.get(`${BACKEND_URL}/api/jobs?limit=5`),
         axios.get(`${BACKEND_URL}/api/library?limit=4`),
-        axios.get(`${BACKEND_URL}/api/health`)
       ]);
       setStats(statsRes.data);
       setRecentJobs(jobsRes.data);
       setRecentLibrary(libRes.data);
-      setHealth(healthRes.data);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
+    }
+
+    // Dropbox diagnostics are best-effort and decoupled — never blocks UI
+    try {
+      const dbxRes = await axios.get(`${BACKEND_URL}/api/diagnostics/dropbox`);
+      setDropboxStatus(dbxRes.data);
+    } catch (e) {
+      setDropboxStatus({ connected: false });
     }
   };
 
@@ -50,11 +57,11 @@ export default function Dashboard() {
       />
 
       {/* Status Banner */}
-      {health && (
-        <div className="mb-6 flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border/70 bg-card text-xs">
-          <div className={`w-2 h-2 rounded-full ${health.dropbox ? 'bg-green-400' : 'bg-red-400'}`} />
+      {dropboxStatus && (
+        <div className="mb-6 flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border/70 bg-card text-xs" data-testid="dropbox-status-banner">
+          <div className={`w-2 h-2 rounded-full ${dropboxStatus.connected ? 'bg-green-400' : 'bg-red-400'}`} />
           <span className="text-foreground font-medium">Dropbox</span>
-          <span className="text-muted-foreground">{health.dropbox ? `Connected as ${health.dropbox_account}` : 'Not connected'}</span>
+          <span className="text-muted-foreground">{dropboxStatus.connected ? `Connected as ${dropboxStatus.account_name}` : 'Not connected'}</span>
         </div>
       )}
 

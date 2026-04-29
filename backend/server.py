@@ -743,21 +743,50 @@ async def root():
 
 @app.get("/api/health")
 async def health():
+    """Fast, dependency-free liveness probe.
+
+    This endpoint MUST return quickly (<100ms) and MUST NOT call any external
+    service (Dropbox, Meta, OpenAI, etc.). Kubernetes liveness probes hit this
+    constantly, so any network call here will cause pod restarts on transient
+    upstream failures. Use /api/diagnostics/* for service-specific checks.
+    """
+    return {
+        "status": "ok",
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
+@app.get("/api/diagnostics/dropbox")
+async def diagnostics_dropbox():
+    """Explicit Dropbox connectivity check (not used by k8s probes)."""
     try:
         dbx = get_dropbox_client()
         acct = dbx.users_get_current_account()
-        dropbox_ok = True
-        dropbox_name = acct.name.display_name
-    except:
-        dropbox_ok = False
-        dropbox_name = ""
+        return {
+            "connected": True,
+            "account_name": acct.name.display_name,
+            "email": acct.email,
+        }
+    except Exception as e:
+        return {
+            "connected": False,
+            "error": str(e)[:200],
+        }
 
-    return {
-        "status": "ok",
-        "dropbox": dropbox_ok,
-        "dropbox_account": dropbox_name,
-        "timestamp": datetime.utcnow().isoformat()
-    }
+
+@app.get("/api/diagnostics/db")
+async def diagnostics_db():
+    """Quick MongoDB connectivity check."""
+    try:
+        # ping the server (1s timeout via default client settings)
+        await db.command("ping")
+        stats = {
+            "media_library": await db.media_library.count_documents({}),
+            "download_jobs": await db.download_jobs.count_documents({}),
+        }
+        return {"connected": True, "collections": stats}
+    except Exception as e:
+        return {"connected": False, "error": str(e)[:200]}
 
 
 # ─── SKOOL ─────────────────────────────────────────────────────────────────────
