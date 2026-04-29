@@ -19,11 +19,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 # (to avoid circular dependencies)
 
 MONGO_URL = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
+DB_NAME = os.environ.get('DB_NAME', 'ultimate_deployment')
 
 async def process_pending_transcriptions():
     """Process videos that need transcription"""
     client = AsyncIOMotorClient(MONGO_URL)
-    db = client.ultimate_deployment
+    db = client[DB_NAME]
     
     # Find videos needing transcription
     items = await db.media_library.find({
@@ -57,7 +58,7 @@ async def process_pending_transcriptions():
 async def process_pending_intelligence():
     """Process videos that need AI analysis"""
     client = AsyncIOMotorClient(MONGO_URL)
-    db = client.ultimate_deployment
+    db = client[DB_NAME]
     
     # Find videos with transcript but no intelligence
     items = await db.media_library.find({

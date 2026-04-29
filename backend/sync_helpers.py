@@ -20,11 +20,12 @@ load_dotenv('/app/backend/.env')
 
 # MongoDB connection (sync)
 MONGO_URL = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
+DB_NAME = os.environ.get('DB_NAME', 'ultimate_deployment')
 client = MongoClient(MONGO_URL)
-db = client.ultimate_deployment
+db = client[DB_NAME]
 
 # Environment variables
-EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', 'sk-emergent-v1-prod-ff5vNJO7BQg2')
+EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 DROPBOX_TOKEN = os.environ.get('DROPBOX_ACCESS_TOKEN')
 DROPBOX_FOLDER = os.environ.get('DROPBOX_UPLOAD_FOLDER', '/UltimateDashboard')
 
