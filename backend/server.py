@@ -44,20 +44,8 @@ META_REDIRECT_URI = (
     or os.getenv("META_REDIRECT_URL")
     or ""
 ).strip()
-SKOOL_AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3OTU3MjMzMDgsImlhdCI6MTc2NDE4NzMwOCwidXNlcl9pZCI6IjVmMDYzNDJkZDlkOTQ1MzI5ZWY4ZDNmYTM5MDVmMDhhIn0.56Tn2FIJSMzNKH7CslUQ864ARd09SDvZxDyFVTzhoN0"
-SKOOL_CLIENT_ID = "616914c797264fc0bca8d98e5bf1d09f"
-
-# Whisper model cache (load once)
-_whisper_model = None
-
-def get_whisper_model():
-    global _whisper_model
-    if _whisper_model is None:
-        from faster_whisper import WhisperModel
-        print("Loading Whisper 'base' model...")
-        _whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
-        print("Whisper model ready.")
-    return _whisper_model
+SKOOL_AUTH_TOKEN = os.getenv("SKOOL_AUTH_TOKEN", "")
+SKOOL_CLIENT_ID = os.getenv("SKOOL_CLIENT_ID", "")
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -284,26 +272,49 @@ def scrape_skool_videos(classroom_url: str):
 
 
 def transcribe_audio_file(audio_path: str) -> dict:
-    """Transcribe an audio file using faster-whisper"""
+    """Transcribe an audio file using OpenAI Whisper API.
+
+    Replaces the previous local faster-whisper model so the backend stays
+    deployable on Emergent (no ML dependencies). Same return shape as before.
+    """
     try:
-        model = get_whisper_model()
-        segments, info = model.transcribe(audio_path, beam_size=5, language="en")
-        
-        full_text = ""
-        timestamped = []
-        for segment in segments:
-            full_text += segment.text + " "
-            timestamped.append({
-                "start": round(segment.start, 1),
-                "end": round(segment.end, 1),
-                "text": segment.text.strip()
-            })
-        
+        from openai import OpenAI
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            return {"error": "OPENAI_API_KEY not configured", "full_text": ""}
+
+        client = OpenAI(api_key=api_key)
+
+        with open(audio_path, "rb") as audio_file:
+            transcription = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                response_format="verbose_json",
+                timestamp_granularities=["segment"],
+            )
+
+        full_text = (transcription.text or "").strip()
+        segments = []
+        raw_segments = getattr(transcription, "segments", None) or []
+        for seg in raw_segments:
+            if isinstance(seg, dict):
+                segments.append({
+                    "start": round(seg.get("start", 0) or 0, 1),
+                    "end": round(seg.get("end", 0) or 0, 1),
+                    "text": (seg.get("text") or "").strip(),
+                })
+            else:
+                segments.append({
+                    "start": round(getattr(seg, "start", 0) or 0, 1),
+                    "end": round(getattr(seg, "end", 0) or 0, 1),
+                    "text": (getattr(seg, "text", "") or "").strip(),
+                })
+
         return {
-            "full_text": full_text.strip(),
-            "segments": timestamped,
-            "duration": info.duration,
-            "language": info.language
+            "full_text": full_text,
+            "segments": segments,
+            "duration": getattr(transcription, "duration", 0) or 0,
+            "language": getattr(transcription, "language", "en") or "en",
         }
     except Exception as e:
         return {"error": str(e), "full_text": ""}
