@@ -1,18 +1,18 @@
 [
   {
-    "content": "Add backend endpoints to serve master plan JSON + MD + download",
+    "content": "Update server.py: META_REDIRECT_URI with META_REDIRECT_URL fallback",
     "status": "completed"
   },
   {
-    "content": "Create MasterPlan.js page in frontend with tabs (hooks/reels/carousels/schedule)",
+    "content": "Add GET /api/instagram/auth/config debug endpoint",
     "status": "completed"
   },
   {
-    "content": "Add sidebar nav link + route",
+    "content": "Test both endpoints on preview backend",
     "status": "completed"
   },
   {
-    "content": "Screenshot-verify new page",
-    "status": "completed"
+    "content": "Invoke deployment_agent to diagnose deploy pipeline (latest code/env not deploying)",
+    "status": "in_progress"
   }
 ]

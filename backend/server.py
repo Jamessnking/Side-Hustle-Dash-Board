@@ -37,7 +37,13 @@ KLING_ACCESS_KEY = os.getenv("KLING_ACCESS_KEY", "")
 KLING_SECRET_KEY = os.getenv("KLING_SECRET_KEY", "")
 META_APP_ID = os.getenv("META_APP_ID", "")
 META_APP_SECRET = os.getenv("META_APP_SECRET", "")
-META_REDIRECT_URI = os.getenv("META_REDIRECT_URI", "")
+# Support both correct (URI) and typo (URL) variable names so deployments
+# accidentally configured with META_REDIRECT_URL still work.
+META_REDIRECT_URI = (
+    os.getenv("META_REDIRECT_URI")
+    or os.getenv("META_REDIRECT_URL")
+    or ""
+).strip()
 SKOOL_AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3OTU3MjMzMDgsImlhdCI6MTc2NDE4NzMwOCwidXNlcl9pZCI6IjVmMDYzNDJkZDlkOTQ1MzI5ZWY4ZDNmYTM5MDVmMDhhIn0.56Tn2FIJSMzNKH7CslUQ864ARd09SDvZxDyFVTzhoN0"
 SKOOL_CLIENT_ID = "616914c797264fc0bca8d98e5bf1d09f"
 
@@ -2054,6 +2060,28 @@ async def openclaw_status():
 
 # In-memory Instagram token storage (use DB in production)
 instagram_tokens = {}
+
+@app.get("/api/instagram/auth/config")
+async def instagram_auth_config():
+    """Debug endpoint: shows current OAuth config (no secrets) so we can verify
+    that the deployed backend is actually using the latest code + env vars."""
+    redirect_uri = META_REDIRECT_URI
+    raw_uri = os.getenv("META_REDIRECT_URI")
+    raw_url = os.getenv("META_REDIRECT_URL")
+    return {
+        "meta_app_id_present": bool(META_APP_ID),
+        "meta_app_secret_present": bool(META_APP_SECRET),
+        "meta_redirect_uri": redirect_uri,
+        "source": (
+            "META_REDIRECT_URI" if raw_uri
+            else "META_REDIRECT_URL (fallback)" if raw_url
+            else "(none — misconfigured)"
+        ),
+        "callback_route": "/api/instagram/auth/callback",
+        "expected_redirect_uri": "https://rjdigitalsolutions.co.uk/ig-callback.html",
+        "is_correct": redirect_uri == "https://rjdigitalsolutions.co.uk/ig-callback.html",
+    }
+
 
 @app.get("/api/instagram/auth/login")
 async def instagram_auth_login():
